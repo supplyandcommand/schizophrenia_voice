@@ -59,7 +59,7 @@ summary(model1)
 summary(data$rangeRE)
 
 #predictions 
-data$predictionPerc = predict(model1, data, type = "response")
+data$predictionPerc = predict(model1, data, type = "response") 
 
 data$prediction[data$predictionPerc < 0.5] = "0"
 data$prediction[data$predictionPerc > 0.5] = "1"
@@ -84,6 +84,49 @@ negPredValue(data = data$prediction, reference = data$diagnosis,
 negative = "0") #.64
 
 #ROC curve 
+library(pROC)
+rocCurve <- roc(response = data$diagnosis, predictor =
+data$predictionPerc)
+auc(rocCurve) #.677
+ci(rocCurve)
+plot(rocCurve, legacy.axes = TRUE)
+
+#cross validation 
+data$ID = as.numeric(factor(data$ID))
+
+Folds = createFolds(unique(data$ID), k=5, list=TRUE, returnTrain = FALSE)  
+
+library(Metrics)
+
+#create empty objects to store rmse-values from the loop
+rmseTrainSim <- NULL
+rmseTrainBig <- NULL
+rmseTestSim <- NULL
+rmseTestBig <- NULL
+
+#set N=1
+N=1 
+
+for(X in Folds){
+  #divide the full data set into a test set and a train set that changes depending on the fold
+  Test = filter(data, ID %in% X)
+  Train = filter(data, !ID %in% X)
+  
+  #recreate our models
+  model1 <- glmer(diagnosis ~ rangeRE + (1|ID) + (1|study), data, family= "binomial")
+
+  #run predict()-function for each of the two models on the new test set and new train set
+  predictTestS <- predict(model1, Test, allow.new.levels=T)
+  predictTrainS <- predict(model1, Train, allow.new.levels=T)
+  
+  #calculate rmse for each iteration of the loop
+  rmseTrainSim[N] <- rmse(Train$diagnosis, predictTrainS)
+  rmseTestSim[N] <- rmse(Test$diagnosis, predictTestS)
+  
+  #add 1 to N so the loop will run through k times
+  N=N+1
+} 
+
 
 ```
 
