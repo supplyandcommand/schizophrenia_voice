@@ -68,12 +68,22 @@ data$prediction[data$predictionPerc > 0.5] = "1"
 table(prediction = data$prediction, reference = data$diagnosis)
 
 #sensitivity & specificity  
-accuracy = (325+490)/(325+339+185+490)
-accuracy #0.6
+data$diagnosis <- as.factor(data$diagnosis)
+data$prediction <- as.factor(data$prediction)
 
-specificity(data$prediction, data$diagnosis)
+sensitivity(data = data$prediction, reference = data$diagnosis, positive =
+"1") #.73
 
-specificity = 10000/(10000+100)
+specificity(data = data$prediction, reference = data$diagnosis, negative =
+"0") #.49
+
+posPredValue(data = data$prediction, reference = data$diagnosis,
+positive = "1") #.59
+
+negPredValue(data = data$prediction, reference = data$diagnosis,
+negative = "0") #.64
+
+#ROC curve 
 
 ```
 
