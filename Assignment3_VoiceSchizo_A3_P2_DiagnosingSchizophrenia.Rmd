@@ -7,6 +7,10 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(pacman)
+p_load(lmerTest, caret)
+data <- read.csv("data.csv", sep = ",")
+demo <- read.delim("A3_Clinic_Info.txt")
 ```
 
 ## Assignment 3 - Diagnosing schizophrenia from voice
@@ -26,7 +30,64 @@ N.B. the predict() function generates log odds (the full scale between minus and
 N.B. you need to decide whether calculate performance on each single test fold or save all the prediction for test folds in one datase, so to calculate overall performance.
 N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
 
+```{r}
+model=glmer(diagnosis ~ range + (1|ID),data,family="binomial") #need to rescale variables (two-ways: min-max scale, z-scaling (subtract mean, divide by sd))
+data$range_scaled <- scale(data$range) #rescale range
+model=glmer(diagnosis ~ range_scaled + (1|ID) + (1|ID),data,family="binomial")
+summary(model)
+
+
+data$PredictionsPerc = predict(model, data, type = "response")
+data$Predictions[data$PredictionsPerc > 0.5] <- "1"
+data$Predictions[data$PredictionsPerc <= 0.5] <- "0"
+table(predictions = data$Predictions, reference = data$diagnosis)
+#confusionMatrix(table(predictions = data$Predictions, reference = data$diagnosis)), positive = "1")
+
+falsepos = data.frame
+falsepos <- filter(data, diagnosis == 0 & Predictions == 1)
+falseneg <- filter(data, data$diagnosis == 1 & data$Predictions == 0)
+
+length(na.omit(falsepos))
+length(na.omit(falseneg))
+
+
+
+""
+f
+confusionMatrix(data$predicted, data$Diagnosis, positive = "1")
+
+
+test$predictions <- predict(allreg, test, type = "response")
+test$predicted <- ifelse(test$predictions > 0.5, 1, 0) 
+confusionMatrix(test$predicted, test$BinGenre, positive = "1")
+
+falsepos <- filter(test, BinGenre == 0 & predicted == 1)
+falseneg <- filter(test, BinGenre == 1 & predicted == 0)
+table(fuckindata$Genre)
+
+```
+
 ### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
+```{r}
+data[5:13] <- apply(data[5:13], FUN = scale, MARGIN = 2) #rescale all variables
+model1 = glmer(diagnosis ~ mean + (1|ID),data,family="binomial")
+summary(model1)
+model2 = glmer(diagnosis ~ sd + (1|ID),data,family="binomial")
+summary(model2)
+model3 = glmer(diagnosis ~ range + (1|ID),data,family="binomial")
+summary(model3)
+model4 = glmer(diagnosis ~ iqr + (1|ID),data,family="binomial")
+summary(model4)
+model5 = glmer(diagnosis ~ median + (1|ID),data,family="binomial")
+summary(model5)
+model6 = glmer(diagnosis ~ mean_abs + (1|ID),data,family="binomial")
+summary(model6)
+model7 = glmer(diagnosis ~ coef_var + (1|ID),data,family="binomial")
+summary(model7)
+model8 = glmer(diagnosis ~ se + (1|ID),data,family="binomial")
+summary(model8)
+```
+
 
 ### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
 
