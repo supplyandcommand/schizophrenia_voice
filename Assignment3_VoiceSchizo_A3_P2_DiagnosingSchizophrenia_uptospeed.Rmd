@@ -1,0 +1,340 @@
+---
+title: "Assignment 3 - Part 2 - Diagnosing Schizophrenia from Voice"
+author: "Riccardo Fusaroli"
+date: "October 17, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Assignment 3 - Diagnosing schizophrenia from voice
+
+In the previous part of the assignment you generated a bunch of "features", that is, of quantitative descriptors of voice in schizophrenia, focusing on pitch.
+In the course of this assignment we will use them to try to automatically diagnose schizophrenia from voice only, that is, relying on the set of features you produced last time, we will try to produce an automated classifier.
+
+### Question 1: Can you diagnose schizophrenia from pitch range only? If so, how well?
+
+Build a logistic regression to see whether you can diagnose schizophrenia from pitch range only.
+
+Calculate the different performance measures (accuracy, sensitivity, specificity, PPV, NPV, ROC curve) on a logistic regression using the full dataset. Don't forget the random effects!
+
+Then cross-validate the logistic regression and re-calculate performance on the testing folds. N.B. The cross-validation functions you already have should be tweaked: you need to calculate these new performance measures.
+
+N.B. the predict() function generates log odds (the full scale between minus and plus infinity). Log odds > 0 indicates a choice of 1, below a choice of 0.
+N.B. you need to decide whether calculate performance on each single test fold or save all the prediction for test folds in one datase, so to calculate overall performance.
+N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
+
+```{r}
+#Questions 
+### Clinical data - should it be used?
+### How are we inerpreting if we have interactions? 
+### What does it mean to have a big eigenvalue. 
+
+#packages
+library(pacman)
+p_load(tidyverse, lmerTest, caret)
+
+#reading data 
+data <- read.csv("data.csv")
+clinic <- read.delim("A3_Clinic_Info.txt") #delim for txt 
+
+#subsetting clinical data 
+newdata <- clinic[c(1,2,4)]
+
+#renaming 
+newdata <- rename(newdata, ID = Subject, study = Study)
+
+#binding 
+cbind(data, newdata, by = c("ID", "study"))
+
+#building model - rescaling with min-max 
+library(scales)
+data$rangeRE <- rescale(data$range)
+
+model1 <- glmer(diagnosis ~ rangeRE + (1|ID) + (1|study), data, family= "binomial")
+summary(model1)
+
+summary(data$rangeRE)
+
+#predictions 
+data$predictionPerc = predict(model1, data, type = "response")
+
+data$prediction[data$predictionPerc < 0.5] = "0"
+data$prediction[data$predictionPerc > 0.5] = "1"
+
+#table 
+table(prediction = data$prediction, reference = data$diagnosis)
+
+#sensitivity & specificity  
+data$diagnosis <- as.factor(data$diagnosis)
+data$prediction <- as.factor(data$prediction)
+
+sensitivity(data = data$prediction, reference = data$diagnosis, positive =
+"1") #.73
+
+specificity(data = data$prediction, reference = data$diagnosis, negative =
+"0") #.49
+
+posPredValue(data = data$prediction, reference = data$diagnosis,
+positive = "1") #.59
+
+negPredValue(data = data$prediction, reference = data$diagnosis,
+negative = "0") #.64
+
+#ROC curve 
+library(pROC)
+rocCurve <- roc(response = data$diagnosis, predictor =
+data$predictionPerc)
+auc(rocCurve) #.677
+ci(rocCurve)
+plot(rocCurve, legacy.axes = TRUE)
+
+
+```
+
+questions:
+Why is there no ROC curve?
+There is one in "viggomortensen". 
+Should this one be transferred? 
+
+```{r, crossvalidation}
+
+library(caret)
+library(ModelMetrics)
+#set random seed 
+set.seed(1337)
+
+Bear <- data
+
+Bear$ID <- as.factor(Bear$ID)
+Bear$ID <- as.numeric(Bear$ID) #I think this is the key. Converting back. 
+
+#create five folds where each subject gets randomly assigned to a fold
+Folds = createFolds(unique(Bear$ID), k=5, list=TRUE, returnTrain = FALSE)  
+
+#create empty objects to store rmse-values from the loop
+accuracyTrain<- NULL
+sensitivityTrain<- NULL
+specificityTrain<- NULL
+posPredValueTrain<- NULL
+negPredValueTrain<- NULL
+rmseTrain<- NULL
+accuracyTest<- NULL
+sensitivityTest<- NULL
+specificityTest<- NULL
+posPredValueTest<- NULL
+negPredValueTest<- NULL
+rmseTest<- NULL
+
+#set N=1
+N=1 
+
+for( B in Folds){
+  #divide the full data set into a test set and a train set that changes depending on the fold
+  Test = filter(Bear, ID %in% B)
+  Train = filter(Bear, !ID %in% B)
+  
+  Train$rangeRE <- rescale(Train$range)
+  
+  #recreate our models
+  modelX <- glmer(diagnosis ~ rangeRE + (1|ID) + (1|study), data = Bear, family= "binomial", REML=F) #can't we just use all our data to create the model? 
+
+  #run predict()-function for each of the two models on the new test set and new train set
+  Train$predictionPerc = predict(modelX, Train, type = "response", allow.new.levels=T)
+  Test$predictionPerc = predict(modelX, Test, type = "response", allow.new.levels=T)
+  
+  #sensitivity & specificity  
+  Train$diagnosis <- as.factor(Train$diagnosis) #There was just a bag here. 
+  Train$prediction <- as.factor(Train$prediction)
+  Test$diagnosis <- as.factor(Test$diagnosis)
+  Test$prediction <- as.factor(Test$prediction)
+
+  Train$prediction[data$predictionPerc < 0.5] = "0"
+  Train$prediction[data$predictionPerc > 0.5] = "1"
+  Test$prediction[data$predictionPerc < 0.5] = "0"
+  Test$prediction[data$predictionPerc > 0.5] = "1"
+
+#Also some bugs in the sense that Tran & Test were sometimes replaced by "data"
+#Another thing is whether these should be in a loop? Is that because we want these values for each iteration/fold? 
+  sensitivityTrain[N] <- sensitivity(data = Train$prediction, reference = Train$diagnosis, positive = "1") 
+
+  specificityTrain[N] <- specificity(data = Train$prediction, reference = Train$diagnosis, negative = "0") 
+
+  postPredValueTrain[N] <- posPredValue(data = Train$prediction, reference = Train$diagnosis,
+  positive = "1") 
+
+  negPredValue[N] <- negPredValue(data = Train$prediction, reference = Train$diagnosis,
+  negative = "0")
+  
+  sensitivityTest[N] <- sensitivity(data = Test$prediction, reference = Test$diagnosis, positive =
+  "1") 
+
+  specificityTest[N] <-specificity(data = Test$prediction, reference = Test$diagnosis, negative =
+  "0") 
+
+  posPredValueTest[N] <- posPredValue(data = Test$prediction, reference = Test$diagnosis,
+  positive = "1") 
+
+  negPredValueTest[N] <-negPredValue(data = Test$prediction, reference = Test$diagnosis,
+  negative = "0")
+
+  #calculate rmse for each iteration of the loop
+  rmseTest[N] <- rmse(Test$diagnosis, Test$prediction)
+  rmseTrain[N] <- rmse(Train$diagnosis, Train$prediction)
+  
+  #add 1 to N so the loop will run through k times
+  N=N+1
+} 
+
+#they work outside of the loop at least? 
+negPredValueTest[N] <-negPredValue(data = Test$prediction, reference = Test$diagnosis,
+  negative = "0")
+
+```
+```{r}
+
+```
+
+Trying to make ID unique in the strong sense - combining ID & diagnosis 
+I am just trying something out here. Not sure whether this is an appropriate way.
+This results in a factor column called "uniqueness" that should be unique 
+
+```{r}
+#one way of doing it with characters 
+Bear$diag <- ifelse(Bear$diagnosis == 0,"HC","DISEASE")
+Bear$ID <- as.character(Bear$ID)
+Bear$uniqueness <- with(Bear, paste0(ID, diag))
+Bear$uniqueness <- as.factor(Bear$uniqueness)
+
+#another way of doing it without - but which might be confusing. 
+Bear$diagnosis <- as.character(Bear$diagnosis)
+Bear$uniqueness2 <- with(Bear, paste0(ID, diagnosis))
+Bear$uniqueness2 <- as.numeric(as.factor(as.numeric(Bear$uniqueness2))) #this looks fucked but works. 
+
+```
+
+Trying 2nd approach out.
+Does not work (yet at least..)
+
+```{r}
+
+library(caret)
+library(ModelMetrics)
+#set random seed 
+set.seed(1337)
+
+
+#create five folds where each subject gets randomly assigned to a fold
+Folds = createFolds(unique(Bear$uniqueness2), k=5, list=TRUE, returnTrain = FALSE)  
+
+#create empty objects to store rmse-values from the loop
+accuracyTrain<- NULL
+sensitivityTrain<- NULL
+specificityTrain<- NULL
+posPredValueTrain<- NULL
+negPredValueTrain<- NULL
+rmseTrain<- NULL
+accuracyTest<- NULL
+sensitivityTest<- NULL
+specificityTest<- NULL
+posPredValueTest<- NULL
+negPredValueTest<- NULL
+rmseTest<- NULL
+
+#set N=1
+N=1 
+
+for( B in Folds){
+  #divide the full data set into a test set and a train set that changes depending on the fold
+  Test = filter(Bear, uniqueness2 %in% B)
+  Train = filter(Bear, !uniqueness2 %in% B)
+  
+  Train$rangeRE <- rescale(Train$range)
+  
+  #recreate our models
+  modelX <- glmer(diagnosis ~ rangeRE + (1|uniqueness) + (1|study), data = Bear, family= "binomial", REML=F) #can't we just use all our data to create the model? 
+
+  #run predict()-function for each of the two models on the new test set and new train set
+  Train$predictionPerc = predict(modelX, Train, type = "response", allow.new.levels=T)
+  Test$predictionPerc = predict(modelX, Test, type = "response", allow.new.levels=T)
+  
+  #sensitivity & specificity  
+  Train$diagnosis <- as.factor(Train$diagnosis) #There was just a bag here. 
+  Train$prediction <- as.factor(Train$prediction)
+  Test$diagnosis <- as.factor(Test$diagnosis)
+  Test$prediction <- as.factor(Test$prediction)
+
+  Train$prediction[data$predictionPerc < 0.5] = "0"
+  Train$prediction[data$predictionPerc > 0.5] = "1"
+  Test$prediction[data$predictionPerc < 0.5] = "0"
+  Test$prediction[data$predictionPerc > 0.5] = "1"
+
+#Also some bugs in the sense that Tran & Test were sometimes replaced by "data"
+#Another thing is whether these should be in a loop? Is that because we want these values for each iteration/fold? 
+  sensitivityTrain[N] <- sensitivity(data = Train$prediction, reference = Train$diagnosis, positive = "1") 
+
+  specificityTrain[N] <- specificity(data = Train$prediction, reference = Train$diagnosis, negative = "0") 
+
+  postPredValueTrain[N] <- posPredValue(data = Train$prediction, reference = Train$diagnosis,
+  positive = "1") 
+
+  negPredValue[N] <- negPredValue(data = Train$prediction, reference = Train$diagnosis,
+  negative = "0")
+  
+  sensitivityTest[N] <- sensitivity(data = Test$prediction, reference = Test$diagnosis, positive =
+  "1") 
+
+  specificityTest[N] <-specificity(data = Test$prediction, reference = Test$diagnosis, negative =
+  "0") 
+
+  posPredValueTest[N] <- posPredValue(data = Test$prediction, reference = Test$diagnosis,
+  positive = "1") 
+
+  negPredValueTest[N] <-negPredValue(data = Test$prediction, reference = Test$diagnosis,
+  negative = "0")
+
+  #calculate rmse for each iteration of the loop
+  rmseTest[N] <- rmse(Test$diagnosis, Test$prediction)
+  rmseTrain[N] <- rmse(Train$diagnosis, Train$prediction)
+  
+  #add 1 to N so the loop will run through k times
+  N=N+1
+} 
+
+#they work outside of the loop at least? 
+negPredValueTest[N] <-negPredValue(data = Test$prediction, reference = Test$diagnosis,
+  negative = "0")
+
+```
+```{r}
+
+```
+
+
+```
+
+### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
+
+### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
+
+Now it's time to go wild! Use all (voice-related) variables and interactions you can think of. Compare models and select the best performing model you can find.
+
+Remember:
+- Out-of-sample error crucial to build the best model!
+- After choosing the model, send Malte and Riccardo the code of your model
+
+### Question 4: Properly report the results
+
+METHODS SECTION: how did you analyse the data? That is, how did you extract the data, designed the models and compared their performance?
+
+RESULTS SECTION: can you diagnose schizophrenia based on voice? which features are used? Comment on the difference between the different performance measures.
+
+### Bonus question 5
+
+You have some additional bonus data involving speech rate, pauses, etc. Include them in your analysis. Do they improve classification?
+
+### Bonus question 6
+
+Logistic regression is only one of many classification algorithms. Try using others and compare performance. Some examples: Discriminant Function, Random Forest, Support Vector Machine, etc. The package caret provides them.
