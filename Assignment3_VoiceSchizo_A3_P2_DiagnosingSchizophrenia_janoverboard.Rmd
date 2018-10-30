@@ -34,22 +34,37 @@ N.B. Now you have two levels of structure: subject and study. Should this impact
 
 #packages
 library(pacman)
-p_load(tidyverse, lmerTest, caret, pROC)
+p_load(tidyverse, lmerTest, caret, pROC, ModelMetrics)
 
-#reading data 
-data <- read.csv("data.csv")
-clinic <- read.delim("A3_Clinic_Info.txt") #delim for txt 
+# data PART 1 
+data <- read.csv("data.csv") %>%
+  mutate(ID = factor(ID),
+         study = factor(study),
+         uniqueness = paste0(ID, diagnosis),
+         diagnosis = factor(diagnosis))
 
-#subsetting clinical data 
-newdata <- clinic[c(1,2,4)]
+# data PART 2  
+clinic <- read.delim("A3_Clinic_Info.txt") %>%
+  rename(ID = Subject, 
+         study = Study) %>%
+  mutate(ID = factor(ID),
+         study = factor(study),
+         
+         diagnosis = ifelse(Diagnosis == "Control", 0, 1),
+         
+         uniqueness = paste0(ID, diagnosis)) %>%
+  select(ID, study, Gender, uniqueness)
 
-#renaming 
-newdata <- rename(newdata, ID = Subject, study = Study)
 
-#binding 
-cbind(data, newdata, by = c("ID", "study"))
+# MERGE JOB
+# left join = keeping everyone who appears in "data". Removing those who are in "clinic" only.
+# see https://docs.google.com/document/d/1csAffjmezQZHDmsOKzjSiGkD03BWxdDiJLSVOTRC98o/edit
+Bear <- left_join(data, clinic, by = c("uniqueness")) %>%
+  select(-ID.y, -study.y) %>%
+  rename(ID = ID.x, study = study.x)
 
-#building model - rescaling with min-max 
+
+#lding model - rescaling with min-max 
 library(scales)
 data$rangeRE <- rescale(data$range)
 
