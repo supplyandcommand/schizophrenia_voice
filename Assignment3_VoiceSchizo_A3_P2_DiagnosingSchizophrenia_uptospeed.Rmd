@@ -202,14 +202,118 @@ I am just trying something out here. Not sure whether this is an appropriate way
 This results in a factor column called "uniqueness" that should be unique 
 
 ```{r}
-
+#one way of doing it with characters 
 Bear$diag <- ifelse(Bear$diagnosis == 0,"HC","DISEASE")
 Bear$ID <- as.character(Bear$ID)
 Bear$uniqueness <- with(Bear, paste0(ID, diag))
 Bear$uniqueness <- as.factor(Bear$uniqueness)
 
+#another way of doing it without - but which might be confusing. 
+Bear$diagnosis <- as.character(Bear$diagnosis)
+Bear$uniqueness2 <- with(Bear, paste0(ID, diagnosis))
+Bear$uniqueness2 <- as.numeric(as.factor(as.numeric(Bear$uniqueness2))) #this looks fucked but works. 
+
 ```
 
+Trying 2nd approach out.
+Does not work (yet at least..)
+
+```{r}
+
+library(caret)
+library(ModelMetrics)
+#set random seed 
+set.seed(1337)
+
+
+#create five folds where each subject gets randomly assigned to a fold
+Folds = createFolds(unique(Bear$uniqueness2), k=5, list=TRUE, returnTrain = FALSE)  
+
+#create empty objects to store rmse-values from the loop
+accuracyTrain<- NULL
+sensitivityTrain<- NULL
+specificityTrain<- NULL
+posPredValueTrain<- NULL
+negPredValueTrain<- NULL
+rmseTrain<- NULL
+accuracyTest<- NULL
+sensitivityTest<- NULL
+specificityTest<- NULL
+posPredValueTest<- NULL
+negPredValueTest<- NULL
+rmseTest<- NULL
+
+#set N=1
+N=1 
+
+for( B in Folds){
+  #divide the full data set into a test set and a train set that changes depending on the fold
+  Test = filter(Bear, uniqueness2 %in% B)
+  Train = filter(Bear, !uniqueness2 %in% B)
+  
+  Train$rangeRE <- rescale(Train$range)
+  
+  #recreate our models
+  modelX <- glmer(diagnosis ~ rangeRE + (1|uniqueness) + (1|study), data = Bear, family= "binomial", REML=F) #can't we just use all our data to create the model? 
+
+  #run predict()-function for each of the two models on the new test set and new train set
+  Train$predictionPerc = predict(modelX, Train, type = "response", allow.new.levels=T)
+  Test$predictionPerc = predict(modelX, Test, type = "response", allow.new.levels=T)
+  
+  #sensitivity & specificity  
+  Train$diagnosis <- as.factor(Train$diagnosis) #There was just a bag here. 
+  Train$prediction <- as.factor(Train$prediction)
+  Test$diagnosis <- as.factor(Test$diagnosis)
+  Test$prediction <- as.factor(Test$prediction)
+
+  Train$prediction[data$predictionPerc < 0.5] = "0"
+  Train$prediction[data$predictionPerc > 0.5] = "1"
+  Test$prediction[data$predictionPerc < 0.5] = "0"
+  Test$prediction[data$predictionPerc > 0.5] = "1"
+
+#Also some bugs in the sense that Tran & Test were sometimes replaced by "data"
+#Another thing is whether these should be in a loop? Is that because we want these values for each iteration/fold? 
+  sensitivityTrain[N] <- sensitivity(data = Train$prediction, reference = Train$diagnosis, positive = "1") 
+
+  specificityTrain[N] <- specificity(data = Train$prediction, reference = Train$diagnosis, negative = "0") 
+
+  postPredValueTrain[N] <- posPredValue(data = Train$prediction, reference = Train$diagnosis,
+  positive = "1") 
+
+  negPredValue[N] <- negPredValue(data = Train$prediction, reference = Train$diagnosis,
+  negative = "0")
+  
+  sensitivityTest[N] <- sensitivity(data = Test$prediction, reference = Test$diagnosis, positive =
+  "1") 
+
+  specificityTest[N] <-specificity(data = Test$prediction, reference = Test$diagnosis, negative =
+  "0") 
+
+  posPredValueTest[N] <- posPredValue(data = Test$prediction, reference = Test$diagnosis,
+  positive = "1") 
+
+  negPredValueTest[N] <-negPredValue(data = Test$prediction, reference = Test$diagnosis,
+  negative = "0")
+
+  #calculate rmse for each iteration of the loop
+  rmseTest[N] <- rmse(Test$diagnosis, Test$prediction)
+  rmseTrain[N] <- rmse(Train$diagnosis, Train$prediction)
+  
+  #add 1 to N so the loop will run through k times
+  N=N+1
+} 
+
+#they work outside of the loop at least? 
+negPredValueTest[N] <-negPredValue(data = Test$prediction, reference = Test$diagnosis,
+  negative = "0")
+
+```
+```{r}
+
+```
+
+
+```
 
 ### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
 
