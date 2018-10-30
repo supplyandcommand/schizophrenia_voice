@@ -61,13 +61,16 @@ Bear <- left_join(data, clinic, by = c("uniqueness")) %>%
   select(-ID.y, -study.y) %>%
   rename(ID = ID.x, study = study.x) %>%
   mutate(uniqueness = as.numeric(uniqueness))
+
+rm(data)
+rm(clinic)
 ```
 
 
 # task 1 probably
 too messy, clean up after yourselves
 ```{r}
-#bulding model - rescaling with min-max 
+# WE CHANGED THE SCALING SO THAT THE MODEL WOULD CONVERGE
 #library(scales)
 Bear$rangeRE <- c(scale(Bear$range))
 
@@ -170,8 +173,8 @@ for( B in Folds){
   Test$predictionPerc = predict(modelX, Test, type = "response", allow.new.levels=T)
   
   #sensitivity & specificity
-  Train$prediction <- as.factor(Train$prediction)
-  Test$prediction <- as.factor(Test$prediction)
+  #Train$prediction <- as.factor(Train$prediction)
+  #Test$prediction <- as.factor(Test$prediction)
 
   Train$prediction[Train$predictionPerc < 0.5] = "0"
   Train$prediction[Train$predictionPerc > 0.5] = "1"
