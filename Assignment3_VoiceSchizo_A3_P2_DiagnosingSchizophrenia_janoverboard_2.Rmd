@@ -1,0 +1,252 @@
+---
+title: "Assignment 3 - Part 2 - Diagnosing Schizophrenia from Voice"
+author: "Riccardo Fusaroli"
+date: "October 17, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Assignment 3 - Diagnosing schizophrenia from voice
+
+In the previous part of the assignment you generated a bunch of "features", that is, of quantitative descriptors of voice in schizophrenia, focusing on pitch.
+In the course of this assignment we will use them to try to automatically diagnose schizophrenia from voice only, that is, relying on the set of features you produced last time, we will try to produce an automated classifier.
+
+### Question 1: Can you diagnose schizophrenia from pitch range only? If so, how well?
+
+Build a logistic regression to see whether you can diagnose schizophrenia from pitch range only.
+
+Calculate the different performance measures (accuracy, sensitivity, specificity, PPV, NPV, ROC curve) on a logistic regression using the full dataset. Don't forget the random effects!
+
+Then cross-validate the logistic regression and re-calculate performance on the testing folds. N.B. The cross-validation functions you already have should be tweaked: you need to calculate these new performance measures.
+
+N.B. the predict() function generates log odds (the full scale between minus and plus infinity). Log odds > 0 indicates a choice of 1, below a choice of 0.
+N.B. you need to decide whether calculate performance on each single test fold or save all the prediction for test folds in one datase, so to calculate overall performance.
+N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
+
+```{r}
+#Questions 
+### Clinical data - should it be used?
+### How are we inerpreting if we have interactions? 
+### What does it mean to have a big eigenvalue. 
+
+#packages
+library(pacman)
+p_load(tidyverse, lmerTest, caret, pROC, ModelMetrics)
+
+# data PART 1 
+data <- read.csv("data.csv") %>%
+  mutate(ID = factor(ID),
+         study = factor(study),
+         uniqueness = paste0(ID, diagnosis),
+         diagnosis = factor(diagnosis))
+
+# data PART 2  
+clinic <- read.delim("A3_Clinic_Info.txt") %>%
+  rename(ID = Subject, 
+         study = Study) %>%
+  mutate(ID = factor(ID),
+         study = factor(study),
+         diagnosis = ifelse(Diagnosis == "Control", 0, 1),
+         uniqueness = paste0(ID, diagnosis)) %>%
+  select(ID, study, Gender, uniqueness)
+
+
+# MERGE JOB
+# left join = keeping everyone who appears in "data". Removing those who are in "clinic" only.
+# see https://docs.google.com/document/d/1csAffjmezQZHDmsOKzjSiGkD03BWxdDiJLSVOTRC98o/edit
+Bear <- left_join(data, clinic, by = c("uniqueness")) %>%
+  select(-ID.y, -study.y) %>%
+  rename(ID = ID.x, study = study.x) %>%
+  mutate(uniqueness = as.numeric(uniqueness))
+```
+
+
+# task 1 probably
+too messy, clean up after yourselves
+```{r}
+#bulding model - rescaling with min-max 
+#library(scales)
+Bear$rangeRE <- c(scale(Bear$range))
+
+model1 <- glmer(diagnosis ~ rangeRE + (1|ID) + (1|study), Bear, family= "binomial")
+summary(model1)
+
+summary(Bear$rangeRE)
+
+#predictions 
+Bear$predictionPerc = predict(model1, Bear, type = "response")
+
+Bear$prediction[Bear$predictionPerc < 0.5] = "0"
+Bear$prediction[Bear$predictionPerc > 0.5] = "1"
+
+#table 
+table(prediction = Bear$prediction, reference = Bear$diagnosis)
+
+#sensitivity & specificity  
+Bear$diagnosis <- as.factor(Bear$diagnosis)
+Bear$prediction <- as.factor(Bear$prediction)
+
+caret::sensitivity(data = Bear$prediction, 
+            reference = Bear$diagnosis, positive ="1") #.73
+
+caret::specificity(data = Bear$prediction, 
+            reference = Bear$diagnosis, negative ="0") #.49
+
+posPredValue(data = Bear$prediction, 
+             reference = Bear$diagnosis, positive = "1") #.59
+
+negPredValue(data = Bear$prediction, 
+             reference = Bear$diagnosis, negative = "0") #.64
+
+#ROC curve 
+p_load(pROC)
+rocCurve <- roc(response = Bear$diagnosis, 
+                predictor = Bear$predictionPerc)
+
+#auc(rocCurve) doesn't work now
+ci(rocCurve)
+plot(rocCurve, legacy.axes = TRUE)
+
+```
+
+
+questions:
+Why is there no ROC curve?
+There is one in "viggomortensen". 
+Should this one be transferred? 
+
+# CROSSVALIDATION
+
+```{r}
+#set random seed 
+set.seed(1337)
+
+
+#create five folds where each subject gets randomly assigned to a fold
+Folds = createFolds(Bear$uniqueness, k=5, list=TRUE, returnTrain = FALSE)  
+# UNIQUE() IS GONE
+
+#create empty objects to store rmse-values from the loop
+accuracyTrain<- NULL
+sensitivityTrain<- NULL
+specificityTrain<- NULL
+posPredValueTrain<- NULL
+negPredValueTrain<- NULL
+rmseTrain<- NULL
+accuracyTest<- NULL
+sensitivityTest<- NULL
+specificityTest<- NULL
+posPredValueTest<- NULL
+negPredValueTest<- NULL
+rmseTest<- NULL
+rocCurveTrain <- NULL
+rocCurveTest <- NULL
+aucTrain <- NULL
+aucTest <- NULL
+ciTrain <- NULL
+ciTest <- NULL
+
+#set N=1
+N=1 
+
+for( B in Folds){
+  #divide the full data set into a test set and a train set that changes depending on the fold
+  Test = filter(Bear, uniqueness %in% B)
+  Train = filter(Bear, !uniqueness %in% B)
+  
+  Train$rangeRE <- rescale(Train$range)
+  
+  #Train$diagnosis <- as.factor(Train$diagnosis) #There was just a bag here. 
+  #Test$diagnosis <- as.factor(Test$diagnosis)
+  
+  #recreate our models
+  modelX <- glmer(diagnosis ~ rangeRE + (1|uniqueness) + (1|study), data = Train, family= "binomial")
+
+  #run predict()-function for each of the two models on the new test set and new train set
+  Train$predictionPerc = predict(modelX, Train, type = "response", allow.new.levels=T)
+  Test$predictionPerc = predict(modelX, Test, type = "response", allow.new.levels=T)
+  
+  #sensitivity & specificity
+  Train$prediction <- as.factor(Train$prediction)
+  Test$prediction <- as.factor(Test$prediction)
+
+  Train$prediction[Train$predictionPerc < 0.5] = "0"
+  Train$prediction[Train$predictionPerc > 0.5] = "1"
+  Test$prediction[Test$predictionPerc < 0.5] = "0"
+  Test$prediction[Test$predictionPerc > 0.5] = "1"
+
+#Also some bugs in the sense that Tran & Test were sometimes replaced by "data"
+#Another thing is whether these should be in a loop? Is that because we want these values for each iteration/fold? 
+  sensitivityTrain[N] <- caret::sensitivity(data = Train$prediction, 
+                                            reference = Train$diagnosis, positive = "1") 
+
+  specificityTrain[N] <- caret::specificity(data = Train$prediction, 
+                                            reference = Train$diagnosis, negative = "0") 
+
+  posPredValueTrain[N] <- posPredValue(data = Train$prediction, 
+                                       reference = Train$diagnosis, positive = "1") 
+
+  negPredValueTrain[N] <- negPredValue(data = Train$prediction, 
+                                       reference = Train$diagnosis, negative = "0")
+  
+  sensitivityTest[N] <- caret::sensitivity(data = Test$prediction, 
+                                           reference = Test$diagnosis, positive = "1") 
+
+  specificityTest[N] <- caret::specificity(data = Test$prediction, 
+                                           reference = Test$diagnosis, negative = "0") 
+
+  posPredValueTest[N] <- posPredValue(data = Test$prediction, 
+                                      reference = Test$diagnosis,positive = "1") 
+
+  negPredValueTest[N] <-negPredValue(data = Test$prediction, 
+                                     reference = Test$diagnosis,negative = "0")
+
+  
+  # <TEAM BULLSHIT>
+  
+  #calculate rmse for each iteration of the loop
+  #rmseTest[N] <- rmse(Test$diagnosis, Test$prediction)
+  #rmseTrain[N] <- rmse(Train$diagnosis, Train$prediction)
+  
+  #rocCurveTrain[N] <- roc(response = Train$diagnosis, predictor = Train$predictionPerc)
+  #rocCurveTest[N] <- roc(response = Test$diagnosis, predictor = Test$predictionPerc)
+  #aucTrain <- auc(rocCurveTrain)
+  #ciTrain <- ci(rocCurveTrain)
+  #aucTest <- auc(rocCurveTest)
+  #ciTest <- ci(rocCurveTest)
+  
+  # </TEAM BULLSHIT>
+  
+  #add 1 to N so the loop will run through k times
+  N=N+1
+} 
+
+```
+
+
+### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
+
+### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
+
+Now it's time to go wild! Use all (voice-related) variables and interactions you can think of. Compare models and select the best performing model you can find.
+
+Remember:
+- Out-of-sample error crucial to build the best model!
+- After choosing the model, send Malte and Riccardo the code of your model
+
+### Question 4: Properly report the results
+
+METHODS SECTION: how did you analyse the data? That is, how did you extract the data, designed the models and compared their performance?
+
+RESULTS SECTION: can you diagnose schizophrenia based on voice? which features are used? Comment on the difference between the different performance measures.
+
+### Bonus question 5
+
+You have some additional bonus data involving speech rate, pauses, etc. Include them in your analysis. Do they improve classification?
+
+### Bonus question 6
+
+Logistic regression is only one of many classification algorithms. Try using others and compare performance. Some examples: Discriminant Function, Random Forest, Support Vector Machine, etc. The package caret provides them.
