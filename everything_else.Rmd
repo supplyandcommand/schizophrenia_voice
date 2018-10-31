@@ -27,10 +27,6 @@ N.B. you need to decide whether calculate performance on each single test fold o
 N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
 
 ```{r}
-#Questions 
-### Clinical data - should it be used?
-### How are we inerpreting if we have interactions? 
-### What does it mean to have a big eigenvalue. 
 
 #packages
 library(pacman)
@@ -67,8 +63,8 @@ rm(clinic)
 ```
 
 
-# task 1 probably
-too messy, clean up after yourselves
+# This still works in this document. 
+
 ```{r}
 # WE CHANGED THE SCALING SO THAT THE MODEL WOULD CONVERGE
 #library(scales)
@@ -117,15 +113,31 @@ plot(rocCurve, legacy.axes = TRUE)
 
 # CROSSVALIDATION
 
+Okay, so in this version I have fixed a couple of things. 
+
+Firstly, we min-max everything. This allows us to do all the models on different acoustic features in one loop. However, this also means that while we thought that we would like to do the statistics in the loop, this is something that we are now opting to do outside of the loop (at least for now). This could - of course - be done in a subsequent loop. 
+
+Secondly, I found the bug that I (at least) had with the number of folds. So, the important thing is to have the parentheses surrounding (Bear$ID). Now it makes 5 folds, as it should. 
+
+Thirdly: Here there is no warning message after the loop has run. However, on my computer, I cannot include test$ID and test$iqr in the the assign() function. This is because the number of rows in each iteration/fold does not accurately (but approximately) correspond to the "test" dataframe. This is very weird, and does work in the other version (however, there we run into an issue with converging - see "loop_fix")
+
 ```{r}
 #set random seed 
-library(scales)
+p_load(pwr, MuMIn, simr, dplyr, lmerTest, Hmisc, lme4, e1071, boot)
+p_load(stringi, stringr, gsubfn, seqinr,lsr, spectacles, reshape, readr, caret)
 set.seed(1337)
+
+#min-max 
+for (i in c(6:13)) {
+  minc = min(Bear[,i])
+  maxc = max(Bear[,i])
+  Bear[,i] = (Bear[,i]-minc)/(maxc-minc)
+}
 
 Bear$ID <- as.numeric(as.factor(Bear$ID)) #does not seem to do anything. 
 
 #create five folds where each subject gets randomly assigned to a fold
-Folds = createFolds(unique(Bear$ID, k=5, list=TRUE, returnTrain = FALSE))
+Folds = createFolds(unique(Bear$ID), k=5, list=TRUE, returnTrain = FALSE)
 library(groupdata2)
 # UNIQUE() IS GONE
 
@@ -161,72 +173,44 @@ for(F in Folds){
   Test$rangeRE <- rescale(Test$range)
   #Train$diagnosis <- as.factor(Train$diagnosis) #There was just a bag here. 
   #Test$diagnosis <- as.factor(Test$diagnosis)
+
+  #models 
+model1 = glmer(diagnosis ~ rangeRE + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model2 = glmer(diagnosis ~ sd + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model3 = glmer(diagnosis ~ mean + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model4 = glmer(diagnosis ~ median + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model5 = glmer(diagnosis ~ iqr + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model6 = glmer(diagnosis ~ mean_abs + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model7 = glmer(diagnosis ~ coef_var + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
   
-  #recreate our models
-  modelX <- glmer(diagnosis ~ rangeRE + (1|ID) + (1|triangle) + (1|study), data = Train, family= "binomial")
-
-  #run predict()-function for each of the two models on the new test set and new train set
-  Train$predictionPerc = predict(modelX, Train, type = "response", allow.new.levels=T)
-  Test$predictionPerc = predict(modelX, Test, type = "response", allow.new.levels=T)
+  #testing 
+  #predictions
+  range_pred = inv.logit(predict(model1, Test, na.action = na.omit, allow.new.levels = T ))
+  sd_pitch_pred = inv.logit(predict(model2, Test, na.action = na.omit, allow.new.levels = T ))
+  mean_pred = inv.logit(predict(model3, Test, na.action = na.omit, allow.new.levels = T ))
+  median_pred = inv.logit(predict(model4, Test, na.action = na.omit, allow.new.levels = T ))
+  IQR_pred = inv.logit(predict(model5, Test, na.action = na.omit, allow.new.levels = T ))
+  absolute_def_pred = inv.logit(predict(model6, Test, na.action = na.omit, allow.new.levels = T ))
+  coef_var_pred = inv.logit(predict(model7, Test, na.action = na.omit, allow.new.levels = T ))
   
-  #sensitivity & specificity
-  #Train$prediction <- as.factor(Train$prediction)
-  #Test$prediction <- as.factor(Test$prediction)
-
-  Train$prediction[Train$predictionPerc < 0.5] = "0"
-  Train$prediction[Train$predictionPerc > 0.5] = "1"
-  Test$prediction[Test$predictionPerc < 0.5] = "0"
-  Test$prediction[Test$predictionPerc > 0.5] = "1"
-
-#Also some bugs in the sense that Tran & Test were sometimes replaced by "data"
-#Another thing is whether these should be in a loop? Is that because we want these values for each iteration/fold? 
-  sensitivityTrain[N] <- caret::sensitivity(data = Train$prediction, 
-                                            reference = Train$diagnosis, positive = "1") 
-
-  specificityTrain[N] <- caret::specificity(data = Train$prediction, 
-                                            reference = Train$diagnosis, negative = "0") 
-
-  posPredValueTrain[N] <- posPredValue(data = Train$prediction, 
-                                       reference = Train$diagnosis, positive = "1") 
-
-  negPredValueTrain[N] <- negPredValue(data = Train$prediction, 
-                                       reference = Train$diagnosis, negative = "0")
+  assign(paste0("DF", N), data.frame(range_pred, sd_pitch_pred, mean_pred, median_pred, IQR_pred, absolute_def_pred, coef_var_pred)) #the issue here is that we cannot include anything into the new DF's from the test data, because it does not have the same N of rows as the iterations. This is very weird - and what is fixed when I did everything (more or less) as Mikkel in the "loop_fix" document. 
   
-  sensitivityTest[N] <- caret::sensitivity(data = Test$prediction, 
-                                           reference = Test$diagnosis, positive = "1") 
-
-  specificityTest[N] <- caret::specificity(data = Test$prediction, 
-                                           reference = Test$diagnosis, negative = "0") 
-
-  posPredValueTest[N] <- posPredValue(data = Test$prediction, 
-                                      reference = Test$diagnosis,positive = "1") 
-
-  negPredValueTest[N] <- negPredValue(data = Test$prediction, 
-                                     reference = Test$diagnosis,negative = "0")
-
-  # <TEAM BULLSHIT>
-  
-  #calculate rmse for each iteration of the loop
-  #rmseTest[N] <- rmse(Test$diagnosis, Test$prediction)
-  #rmseTrain[N] <- rmse(Train$diagnosis, Train$prediction)
-  
-  #rocCurveTrain[N] <- roc(response = Train$diagnosis, predictor = Train$predictionPerc)
-  #rocCurveTest[N] <- roc(response = Test$diagnosis, predictor = Test$predictionPerc)
-  #aucTrain <- auc(rocCurveTrain)
-  #ciTrain <- ci(rocCurveTrain)
-  #aucTest <- auc(rocCurveTest)
-  #ciTest <- ci(rocCurveTest)
-  
-  # </TEAM BULLSHIT>
-  
-  #add 1 to N so the loop will run through k times
   N=N+1
 } 
 
-summary(Test$rangeRE)
-summary(Train$rangeRE)
-#terrible prediction - worse than a monkey chosing randomly. 
-table(prediction = Test$prediction, reference = Test$diagnosis)
 
 ```
 

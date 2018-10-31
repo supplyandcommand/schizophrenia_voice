@@ -1,0 +1,206 @@
+---
+title: "Assignment 3 - Part 2 - Diagnosing Schizophrenia from Voice"
+author: "Riccardo Fusaroli"
+date: "October 17, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Assignment 3 - Diagnosing schizophrenia from voice
+
+In the previous part of the assignment you generated a bunch of "features", that is, of quantitative descriptors of voice in schizophrenia, focusing on pitch.
+In the course of this assignment we will use them to try to automatically diagnose schizophrenia from voice only, that is, relying on the set of features you produced last time, we will try to produce an automated classifier.
+
+### Question 1: Can you diagnose schizophrenia from pitch range only? If so, how well?
+
+Build a logistic regression to see whether you can diagnose schizophrenia from pitch range only.
+
+Calculate the different performance measures (accuracy, sensitivity, specificity, PPV, NPV, ROC curve) on a logistic regression using the full dataset. Don't forget the random effects!
+
+Then cross-validate the logistic regression and re-calculate performance on the testing folds. N.B. The cross-validation functions you already have should be tweaked: you need to calculate these new performance measures.
+
+N.B. the predict() function generates log odds (the full scale between minus and plus infinity). Log odds > 0 indicates a choice of 1, below a choice of 0.
+N.B. you need to decide whether calculate performance on each single test fold or save all the prediction for test folds in one datase, so to calculate overall performance.
+N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
+
+```{r}
+#packages
+library(pacman)
+p_load(tidyverse, pROC, ModelMetrics)
+p_load(pwr, MuMIn, simr, dplyr, lmerTest, Hmisc, lme4, e1071, boot)
+p_load(stringi, stringr, gsubfn, seqinr,lsr, spectacles, reshape, readr, caret)
+
+## MIKKEL ##
+clinic <- read.delim("A3_Clinic_Info.txt") #using all of the predictors from both..
+data <- read.csv("data.csv")
+
+colnames(data)[1] <- "ID"  
+colnames(data)[2] <- "Study" 
+colnames(data)[3] <- "diagnosis" 
+colnames(data)[4] <- "Trial" 
+colnames(clinic)[2] <- "ID"
+colnames(clinic)[3] <- "diagnosis"
+
+clinic$diagnosis <- ifelse(clinic$diagnosis == "Control", 0, 1)
+Bear <- merge(clinic, data)
+## MIKKEL
+
+rm(clinic, data)
+
+```
+
+# CROSSVALIDATION
+
+In this document I have not included the chunk above, because some variables have been renamed, and I just didn't have the time. 
+
+The loop now works, and I can save the iterations in separate DF's. Importantly, I can attach data from the participants in these dataframes. This enables us to locate which participant we are making a prediction for, which is not (so far) an option in the other document.
+However, it does not converge (at least for some of the models).
+
+Besides, the output is ready to be used to obtain the statistics that we are interested in (and originally tried to make a loop generate - perhaps some code can be recycled)
+
+```{r}
+#set random seed 
+set.seed(1337)
+
+for (i in c(19:26)) {
+  minc = min(Bear[,i])
+  maxc = max(Bear[,i])
+  Bear[,i] = (Bear[,i]-minc)/(maxc-minc)
+}
+
+Bear$ID <- as.numeric(as.factor(Bear$ID)) #does not seem to do anything. 
+
+#create five folds where each subject gets randomly assigned to a fold
+Folds = createFolds(unique(Bear$ID), k=5, list=TRUE, returnTrain = FALSE) #parentes bitch. 
+
+#set N=1
+N=1 
+
+for(F in Folds){
+  #divide the full data set into a test set and a train set that changes depending on the fold
+  Test = filter(Bear, ID %in% F)
+  Train = filter(Bear, !ID %in% F)
+
+  #models 
+model1 = glmer(diagnosis ~ range + Gender + (1|ID) + (1|Trial), data =
+Train, family = "binomial")
+
+model2 = glmer(diagnosis ~ sd + Gender + (1|ID) + (1|Trial), data =
+Train, family = "binomial")
+
+model3 = glmer(diagnosis ~ mean + Gender + (1|ID) + (1|Trial), data =
+Train, family = "binomial")
+
+model4 = glmer(diagnosis ~ median + Gender + (1|ID) + (1|Trial), data =
+Train, family = "binomial")
+
+model5 = glmer(diagnosis ~ iqr + Gender + (1|ID) + (1|Trial), data =
+Train, family = "binomial")
+
+model6 = glmer(diagnosis ~ mean_abs + Gender + (1|ID) + (1|Trial), data =
+Train, family = "binomial")
+
+model7 = glmer(diagnosis ~ coef_var + Gender + (1|ID) + (1|Trial), data =
+Train, family = "binomial")
+  
+  #testing 
+  #predictions
+  range_pred = inv.logit(predict(model1, Test, na.action = na.omit, allow.new.levels = T ))
+  sd_pitch_pred = inv.logit(predict(model2, Test, na.action = na.omit, allow.new.levels = T ))
+  mean_pred = inv.logit(predict(model3, Test, na.action = na.omit, allow.new.levels = T ))
+  median_pred = inv.logit(predict(model4, Test, na.action = na.omit, allow.new.levels = T ))
+  IQR_pred = inv.logit(predict(model5, Test, na.action = na.omit, allow.new.levels = T ))
+  absolute_def_pred = inv.logit(predict(model6, Test, na.action = na.omit, allow.new.levels = T ))
+  coef_var_pred = inv.logit(predict(model7, Test, na.action = na.omit, allow.new.levels = T ))
+  
+  assign(paste0("DF", N), data.frame(Test$ID, Test$iqr, range_pred, sd_pitch_pred, mean_pred, median_pred, IQR_pred, absolute_def_pred, coef_var_pred)) #unique row (thus iqr)
+  
+  N=N+1
+} 
+
+#works, but there is a warning.. 
+summary(Bear$iqr) #humongous outliers - maybe explains something? 
+
+```
+
+Next chunk stolen. 
+Works though.. 
+
+```{r}
+super_df <- Reduce(function(...) merge(..., all=TRUE), list(DF1, DF2, DF3, DF4, DF5))
+#Maybe see how rbind differs. Less fancy, but.. 
+
+#putting it together. 
+colnames(super_df)[1] <- "Subject"
+colnames(super_df)[2] <- "IQR"
+
+#The next thing does not work at the moment. 
+final_countdown <- plyr::join(data, super_df, type = "right")
+table(final_countdown$Subject)
+final_countdown <- na.omit(final_countdown)
+```
+
+
+### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
+
+```{r}
+#correlation just to get an overview. 
+library(corrplot)
+
+Bear$diagnosis <- as.numeric(Bear$Diagnosis)
+cor_data = select(Bear, diagnosis, mean, sd, range, iqr, median, mean_abs, coef_var, se) 
+
+#only weak correlations 
+corr = round(cor(cor_data,method = "spearman"),2)
+corrplot.mixed(corr)
+
+```
+
+
+### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
+
+
+```{r}
+
+big_model <- lmer(CHI_MLU ~ VISIT + I(VISIT^2) + Diagnosis + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + verbalIQ_1 + MOT_MLU + tokens_MOT + types_MOT + (1+VISIT|SUBJ), data = model_data)
+
+
+big_model <- lmer(CHI_MLU ~ VISIT + I(VISIT^2) + verbalIQ_1 + MOT_MLU + tokens_MOT +  (1+VISIT|SUBJ), data = model_data)
+
+(step_res <- step(big_model))
+final <- get_model(step_res)
+anova(final) 
+summary(final)
+
+modelSup <- glmer(diagnosis ~ rangeRE +  (1|ID) + (1|study), data = Train, family= "binomial")
+
+```
+
+
+Now it's time to go wild! Use all (voice-related) variables and interactions you can think of. Compare models and select the best performing model you can find.
+
+Remember:
+- Out-of-sample error crucial to build the best model!
+- After choosing the model, send Malte and Riccardo the code of your model
+
+```{r}
+
+```
+
+
+### Question 4: Properly report the results
+
+METHODS SECTION: how did you analyse the data? That is, how did you extract the data, designed the models and compared their performance?
+
+RESULTS SECTION: can you diagnose schizophrenia based on voice? which features are used? Comment on the difference between the different performance measures.
+
+### Bonus question 5
+
+You have some additional bonus data involving speech rate, pauses, etc. Include them in your analysis. Do they improve classification?
+
+### Bonus question 6
+
+Logistic regression is only one of many classification algorithms. Try using others and compare performance. Some examples: Discriminant Function, Random Forest, Support Vector Machine, etc. The package caret provides them.
