@@ -24,7 +24,8 @@ p_load(tidyverse,
        pROC, #ci()
        ModelMetrics, #auc()
        boot, #inv.logit()
-       groupdata2) #fold()
+       groupdata2, #fold()
+       MuMIn)  #dredge()
 
 
 ## LOAD IN DATA
@@ -127,7 +128,7 @@ Bear_scaled <- fold(Bear_scaled, k = 5,
 # https://cran.r-project.org/web/packages/groupdata2/vignettes/cross-validation_with_groupdata2.html
 
 crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
-   # Initialize empty list for recording performances
+  # Initialize empty list for recording performances
   performances_SEN <- c()
   performances_SPE <- c()
   performances_PPV <- c()
@@ -205,6 +206,7 @@ m7 <- "diagnosis ~ coef_var + Gender + (1|ID) + (1|triangle)"
 model_list <- list(m1, m2, m3, m4, m5, m6, m7)
 ```
 
+
 ```{r output}
 cross_talbe <- map_df(
             #list to loop trough
@@ -218,12 +220,15 @@ cross_talbe <- map_df(
             pos = "1", 
             neg = "0")
 
+cross_talbe %>%
+  kable()
+
 ```
 
 
 
 ### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
-
+UNDER CONSTRUCTION
 ```{r}
 library(corrplot)
 
@@ -241,8 +246,12 @@ corrplot.mixed(corr)
 
 
 ### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
+this section contains:
+- intuition approach (try to guess which model would be nice)
+- brute force approach (p-hack the shit out of it)
 
-UNDER CONSTRUCITON
+
+UNDER CONSTRUCITON - Magnus&Jan in Royal session
 ```{r}
 ## models
 
@@ -268,31 +277,25 @@ bad_cross = crossvalidation_nation(data = Bear_scaled, k = 5,
 
 ```
 
-
-
-OLD CODE:
-```{r}
-# bullshit model with EVERYTHING
-# no converge
-big_model <- glmer(diagnosis ~ 
-                     mean + sd + range + iqr + median + mean_abs + coef_var + se + Gender +
-                     (1|ID) + (1|study), Bear_scaled, family = "binomial")
-
-step_res <- step(big_model)
-final <- get_model(step_res)
-anova(final) 
-summary(final)
-```
-
-
 Now it's time to go wild! Use all (voice-related) variables and interactions you can think of. Compare models and select the best performing model you can find.
 
 Remember:
 - Out-of-sample error crucial to build the best model!
 - After choosing the model, send Malte and Riccardo the code of your model
 
-```{r}
+```{r phack brute}
+fix_bear <- names(Bear_scaled)[6:13] %>%
+  paste(collapse=" + ") %>%
+  paste0("diagnosis ~ ", .)
+  
 
+g1 <- glmer(paste0(fix_bear," + (1|ID) + (1|study)"), Bear_scaled, family= "binomial")
+
+model_set = dredge(g1,extra = alist("AIC", "BIC"))
+```
+
+```{r phack manual and lame}
+g1 <- "diagnosis ~ mean + sd + range + iqr + median + mean_abs + coef_var + se + (1|ID) + (1|study)"
 ```
 
 
