@@ -28,17 +28,27 @@ N.B. Now you have two levels of structure: subject and study. Should this impact
 
 ```{r}
 #packages
-library(pacman)
-p_load(tidyverse, lmerTest, caret, pROC, ModelMetrics, boot)
+## LOAD IN PACKAGES
 
-# data PART 1 
+library(pacman)
+p_load(tidyverse, 
+       knitr, #kable()
+       lmerTest, #lmer()
+       caret, #sensitivity() etc.
+       pROC, #ci()
+       ModelMetrics, #auc()
+       boot, #inv.logit()
+       groupdata2) #fold()
+
+
+## LOAD IN DATA
+
 data <- read.csv("data.csv") %>%
   mutate(ID = factor(ID),
          study = factor(study),
          uniqueness = paste0(ID, diagnosis),
          diagnosis = factor(diagnosis))
 
-# data PART 2  
 clinic <- read.delim("A3_Clinic_Info.txt") %>%
   rename(ID = Subject, 
          study = Study) %>%
@@ -49,7 +59,7 @@ clinic <- read.delim("A3_Clinic_Info.txt") %>%
   select(ID, study, Gender, uniqueness)
 
 
-# MERGE JOB
+## MERGE
 # left join = keeping everyone who appears in "data". Removing those who are in "clinic" only.
 # see https://docs.google.com/document/d/1csAffjmezQZHDmsOKzjSiGkD03BWxdDiJLSVOTRC98o/edit
 Bear <- left_join(data, clinic, by = c("uniqueness")) %>%
@@ -57,8 +67,14 @@ Bear <- left_join(data, clinic, by = c("uniqueness")) %>%
   rename(ID = ID.x, study = study.x) %>%
   mutate(uniqueness = as.numeric(uniqueness))
 
+
+## CLEAN UP AFTER YOURSELVES
 rm(data)
 rm(clinic)
+
+
+## L33T
+set.seed(1337)
 ```
 
 
@@ -120,96 +136,163 @@ Secondly, I found the bug that I (at least) had with the number of folds. So, th
 
 Thirdly: Here there is no warning message after the loop has run. However, on my computer, I cannot include test$ID and test$iqr in the the assign() function. This is because the number of rows in each iteration/fold does not accurately (but approximately) correspond to the "test" dataframe. This is very weird, and does work in the other version (however, there we run into an issue with converging - see "loop_fix")
 
-```{r}
-#set random seed 
-#p_load(pwr, MuMIn, simr, lmerTest, Hmisc, e1071, boot, stringi, gsubfn, seqinr,lsr, spectacles)
-set.seed(1337)
+```{r folds}
+# adds a new column with fold number
+Bear <- fold(Bear, k = 5, 
+             cat_col = 'diagnosis', #balances ratio between shizo/control
+             id_col = 'ID') #keeps same people in same folds
 
-#min-max 
+```
+
+```{r scaling}
+# new df not to overwrite
 Bear_scaled <- Bear
+
+# MINMAX
 for (i in c(6:13)) {
   minc = min(Bear_scaled[,i])
   maxc = max(Bear_scaled[,i])
   Bear_scaled[,i] = (Bear_scaled[,i]-minc)/(maxc-minc)
 }
 
-Bear_scaled$ID <- as.numeric(as.factor(Bear_scaled$ID)) #does not seem to do anything. 
-
-#create five folds where each subject gets randomly assigned to a fold
-Folds = createFolds(unique(Bear_scaled$ID), k=5, list=TRUE, returnTrain = FALSE)
-p_load(groupdata2)
-# UNIQUE() IS GONE
-
-#create empty objects to store rmse-values from the loop
-accuracyTrain<- NULL
-sensitivityTrain<- NULL
-specificityTrain<- NULL
-posPredValueTrain<- NULL
-negPredValueTrain<- NULL
-rmseTrain<- NULL
-accuracyTest<- NULL
-sensitivityTest<- NULL
-specificityTest<- NULL
-posPredValueTest<- NULL
-negPredValueTest<- NULL
-rmseTest<- NULL
-rocCurveTrain <- NULL
-rocCurveTest <- NULL
-aucTrain <- NULL
-aucTest <- NULL
-ciTrain <- NULL
-ciTest <- NULL
-
-#set N=1
-N=1 
-
-for(F in Folds){
-  #divide the full data set into a test set and a train set that changes depending on the fold
-  Test = filter(Bear_scaled, ID %in% F)
-  Train = filter(Bear_scaled, !ID %in% F)
-
-  #Train$rangeRE <- rescale(Train$range)
-  #Test$rangeRE <- rescale(Test$range)
-  #Train$diagnosis <- as.factor(Train$diagnosis) #There was just a bag here. 
-  #Test$diagnosis <- as.factor(Test$diagnosis)
-
-  #models 
-model1 = glmer(diagnosis ~ rangeRE + Gender + (1|ID) + (1|triangle), data =
-Train, family = "binomial")
-
-model2 = glmer(diagnosis ~ sd + Gender + (1|ID) + (1|triangle), data =
-Train, family = "binomial")
-
-model3 = glmer(diagnosis ~ mean + Gender + (1|ID) + (1|triangle), data =
-Train, family = "binomial")
-
-model4 = glmer(diagnosis ~ median + Gender + (1|ID) + (1|triangle), data =
-Train, family = "binomial")
-
-model5 = glmer(diagnosis ~ iqr + Gender + (1|ID) + (1|triangle), data =
-Train, family = "binomial")
-
-model6 = glmer(diagnosis ~ mean_abs + Gender + (1|ID) + (1|triangle), data =
-Train, family = "binomial")
-
-model7 = glmer(diagnosis ~ coef_var + Gender + (1|ID) + (1|triangle), data =
-Train, family = "binomial")
-  
-  #testing 
-  #predictions
-  range_pred = inv.logit(predict(model1, Test, na.action = na.omit, allow.new.levels = T ))
-  sd_pitch_pred = inv.logit(predict(model2, Test, na.action = na.omit, allow.new.levels = T ))
-  mean_pred = inv.logit(predict(model3, Test, na.action = na.omit, allow.new.levels = T ))
-  median_pred = inv.logit(predict(model4, Test, na.action = na.omit, allow.new.levels = T ))
-  IQR_pred = inv.logit(predict(model5, Test, na.action = na.omit, allow.new.levels = T ))
-  absolute_def_pred = inv.logit(predict(model6, Test, na.action = na.omit, allow.new.levels = T ))
-  coef_var_pred = inv.logit(predict(model7, Test, na.action = na.omit, allow.new.levels = T ))
-  
-  assign(paste0("DF", N), data.frame(range_pred, sd_pitch_pred, mean_pred, median_pred, IQR_pred, absolute_def_pred, coef_var_pred)) #the issue here is that we cannot include anything into the new DF's from the test data, because it does not have the same N of rows as the iterations. This is very weird - and what is fixed when I did everything (more or less) as Mikkel in the "loop_fix" document. 
-  
-  N=N+1
-} 
+# keep her clean
+rm(i, maxc, minc)
 ```
+
+```{r loop}
+# heavily inspired by Ludvig Renbo Olsen
+# https://cran.r-project.org/web/packages/groupdata2/vignettes/cross-validation_with_groupdata2.html
+
+crossvalidation_nation <- function(data, k, model, dependent, pos, neg) {
+   # Initialize empty list for recording performances
+  performances_SEN <- c()
+  performances_SPE <- c()
+  performances_PPV <- c()
+  performances_NPV <- c()
+  
+  # One iteration per fold
+  for (fold in 1:k){
+    
+    # Create training set for this iteration
+    # Subset all the datapoints where .folds does not match the current fold
+    training_set <- data[data$.folds != fold,]
+    
+    # Create test set for this iteration
+    # Subset all the datapoints where .folds matches the current fold
+    testing_set <- data[data$.folds == fold,]
+    
+    ## Train model
+
+    # If there is a random effect,
+    # use lmer() to train model
+    # else use lm()
+
+    model <- glmer(model, training_set, family = "binomial")
+    
+
+    ## Test model
+
+    # Predict the dependent variable in the testing_set with the trained model
+    predicted <- inv.logit(predict(model, testing_set, allow.new.levels=TRUE))
+    
+    # Make predicted into factors
+    predicted[predicted < 0.5] = "0"
+    predicted[predicted >= 0.5] = "1"
+    
+    predicted <- factor(predicted)
+
+    # Get model performance metrics between the predicted and the observed
+    SEN <- caret::sensitivity(predicted, testing_set[[dependent]], positive = pos)
+    
+    SPE <- caret::specificity(predicted, testing_set[[dependent]], negative = neg)
+    
+    PPV <- posPredValue(predicted, testing_set[[dependent]], positive = pos)
+    
+    NPV <- negPredValue(predicted, testing_set[[dependent]], negative = neg)
+
+    # Add the to the performance list
+    performances_SEN[fold] <- SEN
+    performances_SPE[fold] <- SPE
+    performances_PPV[fold] <- PPV
+    performances_NPV[fold] <- NPV
+
+
+  }
+
+  # Return the mean of the recorded RMSEs
+  return(c('SEN' = mean(performances_SEN),
+           'SPE' = mean(performances_SPE),
+           'PPV' = mean(performances_PPV),
+           'NPV' = mean(performances_NPV)))
+
+}
+
+
+```
+
+
+```{r model list}
+m1 <- "diagnosis ~ range + Gender + (1|ID) + (1|triangle)"
+m2 <- "diagnosis ~ sd + Gender + (1|ID) + (1|triangle)"
+m3 <- "diagnosis ~ mean + Gender + (1|ID) + (1|triangle)"
+m4 <- "diagnosis ~ median + Gender + (1|ID) + (1|triangle)"
+m5 <- "diagnosis ~ iqr + Gender + (1|ID) + (1|triangle)"
+m6 <- "diagnosis ~ mean_abs + Gender + (1|ID) + (1|triangle)"
+m7 <- "diagnosis ~ coef_var + Gender + (1|ID) + (1|triangle)"
+
+model_list <- list(m1, m2, m3, m4, m5, m6, m7)
+```
+
+data, k, model, dependent, pos, neg
+```{r cross-validation}
+## M1
+m1_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = m1, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+
+## M2
+m2_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = m2, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+
+## M3
+m3_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = m3, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+
+## M4
+m4_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = m4, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+
+## M5
+m5_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = m5, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+
+## M6
+m6_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = m6, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+
+## M7
+m7_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = m7, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+```
+
+```{r output}
+outputs <- rbind(m1_cross, m2_cross, m3_cross, m4_cross, m5_cross, m6_cross, m7_cross)
+
+cross_table <- as.data.frame(cbind(as.character(model_list), round(outputs, 3))) %>%
+  rownames_to_column() %>%
+  select(-rowname) %>%
+  rename(model = V1)
+
+cross_table %>%
+  kable()
+```
+
 
 
 ### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
