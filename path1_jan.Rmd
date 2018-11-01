@@ -276,21 +276,46 @@ corrplot.mixed(corr)
 
 ### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
 
-
+UNDER CONSTRUCITON
 ```{r}
+## models
 
-big_model <- lmer(CHI_MLU ~ VISIT + I(VISIT^2) + Diagnosis + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + verbalIQ_1 + MOT_MLU + tokens_MOT + types_MOT + (1+VISIT|SUBJ), data = model_data)
+# model based on momentarily intuitions
+intuition <- glmer(diagnosis ~ range + Gender + mean + coef_var + 
+                     (1|ID) + (1|study), Bear_scaled, family = "binomial")
+
+# model based on what we though would fuck up
+bad <- glmer(diagnosis ~ iqr + Gender + median + 
+                     (1|ID) + (1|study), Bear_scaled, family = "binomial")
 
 
-big_model <- lmer(CHI_MLU ~ VISIT + I(VISIT^2) + verbalIQ_1 + MOT_MLU + tokens_MOT +  (1+VISIT|SUBJ), data = model_data)
 
-(step_res <- step(big_model))
+## cross-validation
+
+intuition_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = intuition, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+
+bad_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = bad, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+
+```
+
+
+
+OLD CODE:
+```{r}
+# bullshit model with EVERYTHING
+# no converge
+big_model <- glmer(diagnosis ~ 
+                     mean + sd + range + iqr + median + mean_abs + coef_var + se + Gender +
+                     (1|ID) + (1|study), Bear_scaled, family = "binomial")
+
+step_res <- step(big_model)
 final <- get_model(step_res)
 anova(final) 
 summary(final)
-
-modelSup <- glmer(diagnosis ~ rangeRE +  (1|ID) + (1|study), data = Train, family= "binomial")
-
 ```
 
 
