@@ -59,7 +59,7 @@ rm(data)
 rm(clinic)
 
 
-## L33T
+## s33d
 set.seed(1337)
 ```
 
@@ -116,7 +116,7 @@ Thirdly: Here there is no warning message after the loop has run. However, on my
 
 ```{r folds}
 # adds a new column with fold number
-Bear <- fold(Bear, k = 5, 
+Bear_scaled <- fold(Bear_scaled, k = 5, 
              cat_col = 'diagnosis', #balances ratio between shizo/control
              id_col = 'ID') #keeps same people in same folds
 
@@ -126,7 +126,7 @@ Bear <- fold(Bear, k = 5,
 # heavily inspired by Ludvig Renbo Olsen
 # https://cran.r-project.org/web/packages/groupdata2/vignettes/cross-validation_with_groupdata2.html
 
-crossvalidation_nation <- function(data, k, model, dependent, pos, neg) {
+crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
    # Initialize empty list for recording performances
   performances_SEN <- c()
   performances_SPE <- c()
@@ -150,7 +150,7 @@ crossvalidation_nation <- function(data, k, model, dependent, pos, neg) {
     # use lmer() to train model
     # else use lm()
 
-    model <- glmer(model, training_set, family = "binomial")
+    model <- glmer(model_name, training_set, family = "binomial")
     
 
     ## Test model
@@ -183,7 +183,8 @@ crossvalidation_nation <- function(data, k, model, dependent, pos, neg) {
   }
 
   # Return the mean of the recorded RMSEs
-  return(c('SEN' = mean(performances_SEN),
+  return(cbind.data.frame('model' = model_name,
+           'SEN' = mean(performances_SEN),
            'SPE' = mean(performances_SPE),
            'PPV' = mean(performances_PPV),
            'NPV' = mean(performances_NPV)))
@@ -204,54 +205,19 @@ m7 <- "diagnosis ~ coef_var + Gender + (1|ID) + (1|triangle)"
 model_list <- list(m1, m2, m3, m4, m5, m6, m7)
 ```
 
-data, k, model, dependent, pos, neg
-```{r cross-validation}
-## M1
-m1_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model = m1, 
-                       dependent = "diagnosis", pos = "1", neg = "0")
-
-## M2
-m2_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model = m2, 
-                       dependent = "diagnosis", pos = "1", neg = "0")
-
-## M3
-m3_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model = m3, 
-                       dependent = "diagnosis", pos = "1", neg = "0")
-
-## M4
-m4_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model = m4, 
-                       dependent = "diagnosis", pos = "1", neg = "0")
-
-## M5
-m5_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model = m5, 
-                       dependent = "diagnosis", pos = "1", neg = "0")
-
-## M6
-m6_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model = m6, 
-                       dependent = "diagnosis", pos = "1", neg = "0")
-
-## M7
-m7_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model = m7, 
-                       dependent = "diagnosis", pos = "1", neg = "0")
-```
-
 ```{r output}
-outputs <- rbind(m1_cross, m2_cross, m3_cross, m4_cross, m5_cross, m6_cross, m7_cross)
+cross_talbe <- map_df(
+            #list to loop trough
+            model_list,
+            #function to use
+            crossvalidation_nation,
+            # arguments
+            data = Bear_scaled, 
+            k = 5,
+            dependent = "diagnosis", 
+            pos = "1", 
+            neg = "0")
 
-cross_table <- as.data.frame(cbind(as.character(model_list), round(outputs, 3))) %>%
-  rownames_to_column() %>%
-  select(-rowname) %>%
-  rename(model = V1)
-
-cross_table %>%
-  kable()
 ```
 
 
