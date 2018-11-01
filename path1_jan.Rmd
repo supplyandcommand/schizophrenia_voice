@@ -5,28 +5,14 @@ date: "October 17, 2017"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ## Assignment 3 - Diagnosing schizophrenia from voice
 
 In the previous part of the assignment you generated a bunch of "features", that is, of quantitative descriptors of voice in schizophrenia, focusing on pitch.
 In the course of this assignment we will use them to try to automatically diagnose schizophrenia from voice only, that is, relying on the set of features you produced last time, we will try to produce an automated classifier.
 
-### Question 1: Can you diagnose schizophrenia from pitch range only? If so, how well?
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
 
-Build a logistic regression to see whether you can diagnose schizophrenia from pitch range only.
-
-Calculate the different performance measures (accuracy, sensitivity, specificity, PPV, NPV, ROC curve) on a logistic regression using the full dataset. Don't forget the random effects!
-
-Then cross-validate the logistic regression and re-calculate performance on the testing folds. N.B. The cross-validation functions you already have should be tweaked: you need to calculate these new performance measures.
-
-N.B. the predict() function generates log odds (the full scale between minus and plus infinity). Log odds > 0 indicates a choice of 1, below a choice of 0.
-N.B. you need to decide whether calculate performance on each single test fold or save all the prediction for test folds in one datase, so to calculate overall performance.
-N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
-
-```{r}
 #packages
 ## LOAD IN PACKAGES
 
@@ -77,50 +63,42 @@ rm(clinic)
 set.seed(1337)
 ```
 
+### Question 1: Can you diagnose schizophrenia from pitch range only? If so, how well?
 
-# This still works in this document. 
+Build a logistic regression to see whether you can diagnose schizophrenia from pitch range only.
 
-```{r}
-# WE CHANGED THE SCALING SO THAT THE MODEL WOULD CONVERGE
-#library(scales)
-Bear$rangeRE <- c(scale(Bear$range))
+Calculate the different performance measures (accuracy, sensitivity, specificity, PPV, NPV, ROC curve) on a logistic regression using the full dataset. Don't forget the random effects!
 
-model1 <- glmer(diagnosis ~ rangeRE + (1|ID) + (1|study), Bear, family= "binomial")
-summary(model1)
+Then cross-validate the logistic regression and re-calculate performance on the testing folds. N.B. The cross-validation functions you already have should be tweaked: you need to calculate these new performance measures.
 
-summary(Bear$rangeRE)
+N.B. the predict() function generates log odds (the full scale between minus and plus infinity). Log odds > 0 indicates a choice of 1, below a choice of 0.
+N.B. you need to decide whether calculate performance on each single test fold or save all the prediction for test folds in one datase, so to calculate overall performance.
+N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
 
-#predictions 
-Bear$predictionPerc = predict(model1, Bear, type = "response")
+```{r scaling}
+# new df not to overwrite
+Bear_scaled <- Bear
 
-Bear$prediction[Bear$predictionPerc < 0.5] = "0"
-Bear$prediction[Bear$predictionPerc > 0.5] = "1"
+# MINMAX
+for (i in c(6:13)) {
+  minc = min(Bear_scaled[,i])
+  maxc = max(Bear_scaled[,i])
+  Bear_scaled[,i] = (Bear_scaled[,i]-minc)/(maxc-minc)
+}
 
-#table 
-table(prediction = Bear$prediction, reference = Bear$diagnosis)
+# keep her clean
+rm(i, maxc, minc)
+```
 
-#sensitivity & specificity  
-Bear$diagnosis <- as.factor(Bear$diagnosis)
-Bear$prediction <- as.factor(Bear$prediction)
+```{r roc curve}
+model_range <- glmer(diagnosis ~ range + (1|ID) + (1|study), Bear_scaled, family= "binomial")
 
-caret::sensitivity(data = Bear$prediction, 
-            reference = Bear$diagnosis, positive ="1") #.73
-
-caret::specificity(data = Bear$prediction, 
-            reference = Bear$diagnosis, negative ="0") #.49
-
-posPredValue(data = Bear$prediction, 
-             reference = Bear$diagnosis, positive = "1") #.59
-
-negPredValue(data = Bear$prediction, 
-             reference = Bear$diagnosis, negative = "0") #.64
+range_pred <- inv.logit(predict(model_range, Bear_scaled, type = "response"))
 
 #ROC curve 
-p_load(pROC)
-rocCurve <- roc(response = Bear$diagnosis, 
-                predictor = Bear$predictionPerc)
+rocCurve <- roc(response = Bear_scaled$diagnosis, 
+                predictor = range_pred)
 
-#auc(rocCurve) doesn't work now
 ci(rocCurve)
 plot(rocCurve, legacy.axes = TRUE)
 
@@ -142,21 +120,6 @@ Bear <- fold(Bear, k = 5,
              cat_col = 'diagnosis', #balances ratio between shizo/control
              id_col = 'ID') #keeps same people in same folds
 
-```
-
-```{r scaling}
-# new df not to overwrite
-Bear_scaled <- Bear
-
-# MINMAX
-for (i in c(6:13)) {
-  minc = min(Bear_scaled[,i])
-  maxc = max(Bear_scaled[,i])
-  Bear_scaled[,i] = (Bear_scaled[,i]-minc)/(maxc-minc)
-}
-
-# keep her clean
-rm(i, maxc, minc)
 ```
 
 ```{r loop}
@@ -226,8 +189,6 @@ crossvalidation_nation <- function(data, k, model, dependent, pos, neg) {
            'NPV' = mean(performances_NPV)))
 
 }
-
-
 ```
 
 
