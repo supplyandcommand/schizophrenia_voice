@@ -27,7 +27,6 @@ N.B. you need to decide whether calculate performance on each single test fold o
 N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
 
 ```{r}
-
 #packages
 library(pacman)
 p_load(tidyverse, lmerTest, caret, pROC, ModelMetrics, boot)
@@ -127,16 +126,17 @@ Thirdly: Here there is no warning message after the loop has run. However, on my
 set.seed(1337)
 
 #min-max 
-#for (i in c(6:13)) {
-#  minc = min(Bear[,i])
-#  maxc = max(Bear[,i])
-#  Bear[,i] = (Bear[,i]-minc)/(maxc-minc)
-#}
+Bear_scaled <- Bear
+for (i in c(6:13)) {
+  minc = min(Bear_scaled[,i])
+  maxc = max(Bear_scaled[,i])
+  Bear_scaled[,i] = (Bear_scaled[,i]-minc)/(maxc-minc)
+}
 
-Bear$ID <- as.numeric(as.factor(Bear$ID)) #does not seem to do anything. 
+Bear_scaled$ID <- as.numeric(as.factor(Bear_scaled$ID)) #does not seem to do anything. 
 
 #create five folds where each subject gets randomly assigned to a fold
-Folds = createFolds(unique(Bear$ID), k=5, list=TRUE, returnTrain = FALSE)
+Folds = createFolds(unique(Bear_scaled$ID), k=5, list=TRUE, returnTrain = FALSE)
 p_load(groupdata2)
 # UNIQUE() IS GONE
 
@@ -165,8 +165,8 @@ N=1
 
 for(F in Folds){
   #divide the full data set into a test set and a train set that changes depending on the fold
-  Test = filter(Bear, ID %in% F)
-  Train = filter(Bear, !ID %in% F)
+  Test = filter(Bear_scaled, ID %in% F)
+  Train = filter(Bear_scaled, !ID %in% F)
 
   #Train$rangeRE <- rescale(Train$range)
   #Test$rangeRE <- rescale(Test$range)
@@ -209,9 +209,8 @@ Train, family = "binomial")
   
   N=N+1
 } 
-
-
 ```
+
 
 ### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
 
