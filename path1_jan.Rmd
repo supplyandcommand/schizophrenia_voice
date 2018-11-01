@@ -1,0 +1,277 @@
+---
+title: "Assignment 3 - Part 2 - Diagnosing Schizophrenia from Voice"
+author: "Riccardo Fusaroli"
+date: "October 17, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Assignment 3 - Diagnosing schizophrenia from voice
+
+In the previous part of the assignment you generated a bunch of "features", that is, of quantitative descriptors of voice in schizophrenia, focusing on pitch.
+In the course of this assignment we will use them to try to automatically diagnose schizophrenia from voice only, that is, relying on the set of features you produced last time, we will try to produce an automated classifier.
+
+### Question 1: Can you diagnose schizophrenia from pitch range only? If so, how well?
+
+Build a logistic regression to see whether you can diagnose schizophrenia from pitch range only.
+
+Calculate the different performance measures (accuracy, sensitivity, specificity, PPV, NPV, ROC curve) on a logistic regression using the full dataset. Don't forget the random effects!
+
+Then cross-validate the logistic regression and re-calculate performance on the testing folds. N.B. The cross-validation functions you already have should be tweaked: you need to calculate these new performance measures.
+
+N.B. the predict() function generates log odds (the full scale between minus and plus infinity). Log odds > 0 indicates a choice of 1, below a choice of 0.
+N.B. you need to decide whether calculate performance on each single test fold or save all the prediction for test folds in one datase, so to calculate overall performance.
+N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
+
+```{r}
+
+#packages
+library(pacman)
+p_load(tidyverse, lmerTest, caret, pROC, ModelMetrics, boot)
+
+# data PART 1 
+data <- read.csv("data.csv") %>%
+  mutate(ID = factor(ID),
+         study = factor(study),
+         uniqueness = paste0(ID, diagnosis),
+         diagnosis = factor(diagnosis))
+
+# data PART 2  
+clinic <- read.delim("A3_Clinic_Info.txt") %>%
+  rename(ID = Subject, 
+         study = Study) %>%
+  mutate(ID = factor(ID),
+         study = factor(study),
+         diagnosis = ifelse(Diagnosis == "Control", 0, 1),
+         uniqueness = paste0(ID, diagnosis)) %>%
+  select(ID, study, Gender, uniqueness)
+
+
+# MERGE JOB
+# left join = keeping everyone who appears in "data". Removing those who are in "clinic" only.
+# see https://docs.google.com/document/d/1csAffjmezQZHDmsOKzjSiGkD03BWxdDiJLSVOTRC98o/edit
+Bear <- left_join(data, clinic, by = c("uniqueness")) %>%
+  select(-ID.y, -study.y) %>%
+  rename(ID = ID.x, study = study.x) %>%
+  mutate(uniqueness = as.numeric(uniqueness))
+
+rm(data)
+rm(clinic)
+```
+
+
+# This still works in this document. 
+
+```{r}
+# WE CHANGED THE SCALING SO THAT THE MODEL WOULD CONVERGE
+#library(scales)
+Bear$rangeRE <- c(scale(Bear$range))
+
+model1 <- glmer(diagnosis ~ rangeRE + (1|ID) + (1|study), Bear, family= "binomial")
+summary(model1)
+
+summary(Bear$rangeRE)
+
+#predictions 
+Bear$predictionPerc = predict(model1, Bear, type = "response")
+
+Bear$prediction[Bear$predictionPerc < 0.5] = "0"
+Bear$prediction[Bear$predictionPerc > 0.5] = "1"
+
+#table 
+table(prediction = Bear$prediction, reference = Bear$diagnosis)
+
+#sensitivity & specificity  
+Bear$diagnosis <- as.factor(Bear$diagnosis)
+Bear$prediction <- as.factor(Bear$prediction)
+
+caret::sensitivity(data = Bear$prediction, 
+            reference = Bear$diagnosis, positive ="1") #.73
+
+caret::specificity(data = Bear$prediction, 
+            reference = Bear$diagnosis, negative ="0") #.49
+
+posPredValue(data = Bear$prediction, 
+             reference = Bear$diagnosis, positive = "1") #.59
+
+negPredValue(data = Bear$prediction, 
+             reference = Bear$diagnosis, negative = "0") #.64
+
+#ROC curve 
+p_load(pROC)
+rocCurve <- roc(response = Bear$diagnosis, 
+                predictor = Bear$predictionPerc)
+
+#auc(rocCurve) doesn't work now
+ci(rocCurve)
+plot(rocCurve, legacy.axes = TRUE)
+
+```
+
+# CROSSVALIDATION
+
+Okay, so in this version I have fixed a couple of things. 
+
+Firstly, we min-max everything. This allows us to do all the models on different acoustic features in one loop. However, this also means that while we thought that we would like to do the statistics in the loop, this is something that we are now opting to do outside of the loop (at least for now). This could - of course - be done in a subsequent loop. 
+
+Secondly, I found the bug that I (at least) had with the number of folds. So, the important thing is to have the parentheses surrounding (Bear$ID). Now it makes 5 folds, as it should. 
+
+Thirdly: Here there is no warning message after the loop has run. However, on my computer, I cannot include test$ID and test$iqr in the the assign() function. This is because the number of rows in each iteration/fold does not accurately (but approximately) correspond to the "test" dataframe. This is very weird, and does work in the other version (however, there we run into an issue with converging - see "loop_fix")
+
+```{r}
+#set random seed 
+#p_load(pwr, MuMIn, simr, lmerTest, Hmisc, e1071, boot, stringi, gsubfn, seqinr,lsr, spectacles)
+set.seed(1337)
+
+#min-max 
+#for (i in c(6:13)) {
+#  minc = min(Bear[,i])
+#  maxc = max(Bear[,i])
+#  Bear[,i] = (Bear[,i]-minc)/(maxc-minc)
+#}
+
+Bear$ID <- as.numeric(as.factor(Bear$ID)) #does not seem to do anything. 
+
+#create five folds where each subject gets randomly assigned to a fold
+Folds = createFolds(unique(Bear$ID), k=5, list=TRUE, returnTrain = FALSE)
+p_load(groupdata2)
+# UNIQUE() IS GONE
+
+#create empty objects to store rmse-values from the loop
+accuracyTrain<- NULL
+sensitivityTrain<- NULL
+specificityTrain<- NULL
+posPredValueTrain<- NULL
+negPredValueTrain<- NULL
+rmseTrain<- NULL
+accuracyTest<- NULL
+sensitivityTest<- NULL
+specificityTest<- NULL
+posPredValueTest<- NULL
+negPredValueTest<- NULL
+rmseTest<- NULL
+rocCurveTrain <- NULL
+rocCurveTest <- NULL
+aucTrain <- NULL
+aucTest <- NULL
+ciTrain <- NULL
+ciTest <- NULL
+
+#set N=1
+N=1 
+
+for(F in Folds){
+  #divide the full data set into a test set and a train set that changes depending on the fold
+  Test = filter(Bear, ID %in% F)
+  Train = filter(Bear, !ID %in% F)
+
+  #Train$rangeRE <- rescale(Train$range)
+  #Test$rangeRE <- rescale(Test$range)
+  #Train$diagnosis <- as.factor(Train$diagnosis) #There was just a bag here. 
+  #Test$diagnosis <- as.factor(Test$diagnosis)
+
+  #models 
+model1 = glmer(diagnosis ~ rangeRE + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model2 = glmer(diagnosis ~ sd + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model3 = glmer(diagnosis ~ mean + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model4 = glmer(diagnosis ~ median + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model5 = glmer(diagnosis ~ iqr + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model6 = glmer(diagnosis ~ mean_abs + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+
+model7 = glmer(diagnosis ~ coef_var + Gender + (1|ID) + (1|triangle), data =
+Train, family = "binomial")
+  
+  #testing 
+  #predictions
+  range_pred = inv.logit(predict(model1, Test, na.action = na.omit, allow.new.levels = T ))
+  sd_pitch_pred = inv.logit(predict(model2, Test, na.action = na.omit, allow.new.levels = T ))
+  mean_pred = inv.logit(predict(model3, Test, na.action = na.omit, allow.new.levels = T ))
+  median_pred = inv.logit(predict(model4, Test, na.action = na.omit, allow.new.levels = T ))
+  IQR_pred = inv.logit(predict(model5, Test, na.action = na.omit, allow.new.levels = T ))
+  absolute_def_pred = inv.logit(predict(model6, Test, na.action = na.omit, allow.new.levels = T ))
+  coef_var_pred = inv.logit(predict(model7, Test, na.action = na.omit, allow.new.levels = T ))
+  
+  assign(paste0("DF", N), data.frame(range_pred, sd_pitch_pred, mean_pred, median_pred, IQR_pred, absolute_def_pred, coef_var_pred)) #the issue here is that we cannot include anything into the new DF's from the test data, because it does not have the same N of rows as the iterations. This is very weird - and what is fixed when I did everything (more or less) as Mikkel in the "loop_fix" document. 
+  
+  N=N+1
+} 
+
+
+```
+
+### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
+
+```{r}
+library(corrplot)
+
+Bear$diagnosis <- as.numeric(Bear$diagnosis)
+cor_data = select(Bear, diagnosis, mean, sd, range, iqr, median, mean_abs, coef_var, se) 
+
+#only weak correlations 
+corr = round(cor(cor_data,method = "spearman"),2)
+corrplot.mixed(corr)
+
+#building models 
+
+
+```
+
+
+### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
+
+
+```{r}
+
+big_model <- lmer(CHI_MLU ~ VISIT + I(VISIT^2) + Diagnosis + Gender + Ethnicity + ADOS_1 + nonVerbalIQ_1 + verbalIQ_1 + MOT_MLU + tokens_MOT + types_MOT + (1+VISIT|SUBJ), data = model_data)
+
+
+big_model <- lmer(CHI_MLU ~ VISIT + I(VISIT^2) + verbalIQ_1 + MOT_MLU + tokens_MOT +  (1+VISIT|SUBJ), data = model_data)
+
+(step_res <- step(big_model))
+final <- get_model(step_res)
+anova(final) 
+summary(final)
+
+modelSup <- glmer(diagnosis ~ rangeRE +  (1|ID) + (1|study), data = Train, family= "binomial")
+
+```
+
+
+Now it's time to go wild! Use all (voice-related) variables and interactions you can think of. Compare models and select the best performing model you can find.
+
+Remember:
+- Out-of-sample error crucial to build the best model!
+- After choosing the model, send Malte and Riccardo the code of your model
+
+```{r}
+
+```
+
+
+### Question 4: Properly report the results
+
+METHODS SECTION: how did you analyse the data? That is, how did you extract the data, designed the models and compared their performance?
+
+RESULTS SECTION: can you diagnose schizophrenia based on voice? which features are used? Comment on the difference between the different performance measures.
+
+### Bonus question 5
+
+You have some additional bonus data involving speech rate, pauses, etc. Include them in your analysis. Do they improve classification?
+
+### Bonus question 6
+
+Logistic regression is only one of many classification algorithms. Try using others and compare performance. Some examples: Discriminant Function, Random Forest, Support Vector Machine, etc. The package caret provides them.
