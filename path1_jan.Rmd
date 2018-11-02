@@ -22,7 +22,7 @@ p_load(tidyverse,
        lmerTest, #lmer()
        caret, #sensitivity() etc.
        pROC, #ci()
-       ModelMetrics, #auc()
+       ModelMetrics, #?????? useless
        boot, #inv.logit()
        groupdata2, #fold()
        MuMIn)  #dredge()
@@ -99,7 +99,7 @@ range_pred <- inv.logit(predict(model_range, Bear_scaled, type = "response"))
 #ROC curve 
 rocCurve <- roc(response = Bear_scaled$diagnosis, 
                 predictor = range_pred)
-
+pROC::auc(rocCurve)
 ci(rocCurve)
 plot(rocCurve, legacy.axes = TRUE)
 
