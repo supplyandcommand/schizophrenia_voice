@@ -21,6 +21,7 @@ p_load(tidyverse,
        knitr, #kable()
        lmerTest, #lmer()
        caret, #sensitivity() etc.
+       MASS, #stepAIC()
        pROC, #ci()
        boot, #inv.logit()
        groupdata2, #fold()
@@ -105,14 +106,6 @@ plot(rocCurve, legacy.axes = TRUE)
 ```
 
 # CROSSVALIDATION
-
-Okay, so in this version I have fixed a couple of things. 
-
-Firstly, we min-max everything. This allows us to do all the models on different acoustic features in one loop. However, this also means that while we thought that we would like to do the statistics in the loop, this is something that we are now opting to do outside of the loop (at least for now). This could - of course - be done in a subsequent loop. 
-
-Secondly, I found the bug that I (at least) had with the number of folds. So, the important thing is to have the parentheses surrounding (Bear$ID). Now it makes 5 folds, as it should. 
-
-Thirdly: Here there is no warning message after the loop has run. However, on my computer, I cannot include test$ID and test$iqr in the the assign() function. This is because the number of rows in each iteration/fold does not accurately (but approximately) correspond to the "test" dataframe. This is very weird, and does work in the other version (however, there we run into an issue with converging - see "loop_fix")
 
 ```{r folds}
 # adds a new column with fold number
@@ -287,10 +280,9 @@ fix_bear <- names(Bear_scaled)[6:13] %>%
   paste(collapse=" + ") %>%
   paste0("diagnosis ~ ", .)
   
+g1 <- glmer(paste0(fix_bear," + (1|ID) + (1|study)"), Bear_scaled, family= "binomial") %>%
+  stepAIC(trace = FALSE)
 
-g1 <- glmer(paste0(fix_bear," + (1|ID) + (1|study)"), Bear_scaled, family= "binomial")
-
-model_set = dredge(g1,extra = alist("AIC", "BIC"))
 ```
 
 ```{r phack manual and lame}
