@@ -126,6 +126,7 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
   performances_SPE <- c()
   performances_PPV <- c()
   performances_NPV <- c()
+  performances_AUC <- c()
   
   # One iteration per fold
   for (fold in 1:k){
@@ -166,12 +167,17 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     PPV <- posPredValue(predicted, testing_set[[dependent]], positive = pos)
     
     NPV <- negPredValue(predicted, testing_set[[dependent]], negative = neg)
+    
+    ROC <- roc(response = testing_set[[dependent]], predictor = as.numeric(predicted))
+    
+    AUC <- auc(ROC)
 
     # Add the to the performance list
     performances_SEN[fold] <- SEN
     performances_SPE[fold] <- SPE
     performances_PPV[fold] <- PPV
     performances_NPV[fold] <- NPV
+    performances_AUC[fold] <- AUC
 
 
   }
@@ -181,7 +187,8 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
            'SEN' = mean(performances_SEN),
            'SPE' = mean(performances_SPE),
            'PPV' = mean(performances_PPV),
-           'NPV' = mean(performances_NPV)))
+           'NPV' = mean(performances_NPV),
+           'AUC' = mean(performances_AUC)))
 
 }
 ```
