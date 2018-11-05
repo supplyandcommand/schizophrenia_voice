@@ -27,6 +27,7 @@ p_load(tidyverse,
        groupdata2, #fold()
        MuMIn)  #dredge()
 
+select <- dplyr::select
 
 ## LOAD IN DATA
 
@@ -87,7 +88,7 @@ for (i in c(6:13)) {
   Bear_scaled[,i] = (Bear_scaled[,i]-minc)/(maxc-minc)
 }
 
-# keep her clean
+# keep it clean
 rm(i, maxc, minc)
 ```
 
