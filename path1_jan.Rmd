@@ -188,6 +188,7 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
 
 
 ```{r model list}
+# creating model calls and putting them into list for later use
 m1 <- "diagnosis ~ range + Gender + (1|ID) + (1|triangle)"
 m2 <- "diagnosis ~ sd + Gender + (1|ID) + (1|triangle)"
 m3 <- "diagnosis ~ mean + Gender + (1|ID) + (1|triangle)"
@@ -201,7 +202,7 @@ model_list <- list(m1, m2, m3, m4, m5, m6, m7)
 
 
 ```{r output}
-cross_talbe <- map_df(
+cross_table <- map_df(
             #list to loop trough
             model_list,
             #function to use
@@ -213,7 +214,7 @@ cross_talbe <- map_df(
             pos = "1", 
             neg = "0")
 
-cross_talbe %>%
+cross_table %>%
   kable()
 
 ```
