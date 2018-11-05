@@ -50,7 +50,7 @@ clinic <- read.delim("A3_Clinic_Info.txt") %>%
 ## MERGE
 # left join = keeping everyone who appears in "data". Removing those who are in "clinic" only.
 # see https://docs.google.com/document/d/1csAffjmezQZHDmsOKzjSiGkD03BWxdDiJLSVOTRC98o/edit
-Bear <- left_join(data, clinic, by = c("uniqueness")) %>%
+Bear <- inner_join(data, clinic, by = c("uniqueness")) %>%
   dplyr::select(-ID.y, -study.y) %>%
   rename(ID = ID.x, study = study.x) %>%
   mutate(uniqueness = as.numeric(uniqueness))
@@ -92,14 +92,46 @@ for (i in c(6:13)) {
 rm(i, maxc, minc)
 ```
 
-```{r roc curve}
+
+# range as predictor
+```{r range}
+## range model
 model_range <- glmer(diagnosis ~ range + (1|ID) + (1|study), Bear_scaled, family= "binomial")
 
-range_pred <- inv.logit(predict(model_range, Bear_scaled, type = "response"))
+
+## PREDICT
+
+# predicting response 
+range_pred <- inv.logit(predict(model_range, Bear_scaled, allow.new.levels = TRUE))
+
+# turning it into 2 level factor
+range_pred[range_pred < 0.5] = "0"
+range_pred[range_pred >= 0.5] = "1"
+
+
+
+## SENSITIVITY SPECIFICITY
+caret::sensitivity(factor(range_pred), factor(Bear_scaled$diagnosis), positive = "1")
+caret::specificity(factor(range_pred), factor(Bear_scaled$diagnosis), negative = "0")
+
+
+
+## ACCURACY
+# table to asses
+table_range <- table(Bear_scaled$diagnosis, range_pred)
+
+# accuracy function
+acc_fun <- function(table) {
+  acc = (table[1]+table[4])/sum(table)
+  return(round(acc, 2))
+}
+
+# accuracy score
+acc_fun(table_range)
 
 #ROC curve 
 rocCurve <- roc(response = Bear_scaled$diagnosis, 
-                predictor = range_pred)
+                predictor = as.numeric(range_pred))
 pROC::auc(rocCurve)
 ci(rocCurve)
 plot(rocCurve, legacy.axes = TRUE)
@@ -127,9 +159,11 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
   performances_PPV <- c()
   performances_NPV <- c()
   performances_AUC <- c()
+  performances_ACC <- c()
+
   
-  # One iteration per fold
-  for (fold in 1:k){
+    # One iteration per fold
+  for (fold in 1:k){   #from 1 to k
     
     # Create training set for this iteration
     # Subset all the datapoints where .folds does not match the current fold
@@ -156,9 +190,8 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     # Make predicted into factors
     predicted[predicted < 0.5] = "0"
     predicted[predicted >= 0.5] = "1"
-    
     predicted <- factor(predicted)
-
+    
     # Get model performance metrics between the predicted and the observed
     SEN <- caret::sensitivity(predicted, testing_set[[dependent]], positive = pos)
     
@@ -168,17 +201,21 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     
     NPV <- negPredValue(predicted, testing_set[[dependent]], negative = neg)
     
-    ROC <- roc(response = testing_set[[dependent]], predictor = as.numeric(predicted))
+    predicted <- as.numeric(predicted)
+    rocCurve <- roc(response = testing_set$diagnosis, predictor = predicted)
+    AUC <- pROC::auc(rocCurve)
     
-    AUC <- auc(ROC)
-
+    testing_set$predicted <- predicted
+    testing_correct <- filter(testing_set, diagnosis == predicted)
+    ACC <- nrow(testing_correct) / nrow(testing_set)
+    
     # Add the to the performance list
     performances_SEN[fold] <- SEN
     performances_SPE[fold] <- SPE
     performances_PPV[fold] <- PPV
     performances_NPV[fold] <- NPV
     performances_AUC[fold] <- AUC
-
+    performances_ACC[fold] <- ACC
 
   }
 
@@ -188,7 +225,8 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
            'SPE' = mean(performances_SPE),
            'PPV' = mean(performances_PPV),
            'NPV' = mean(performances_NPV),
-           'AUC' = mean(performances_AUC)))
+           'AUC' = mean(performances_AUC),
+           'ACC' = mean(performances_ACC)))
 
 }
 ```
@@ -196,13 +234,13 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
 
 ```{r model list}
 # creating model calls and putting them into list for later use
-m1 <- "diagnosis ~ range + Gender + (1|ID) + (1|triangle)"
-m2 <- "diagnosis ~ sd + Gender + (1|ID) + (1|triangle)"
-m3 <- "diagnosis ~ mean + Gender + (1|ID) + (1|triangle)"
-m4 <- "diagnosis ~ median + Gender + (1|ID) + (1|triangle)"
-m5 <- "diagnosis ~ iqr + Gender + (1|ID) + (1|triangle)"
-m6 <- "diagnosis ~ mean_abs + Gender + (1|ID) + (1|triangle)"
-m7 <- "diagnosis ~ coef_var + Gender + (1|ID) + (1|triangle)"
+m1 <- "diagnosis ~ range + Gender + (1|uniqueness) + (1|triangle)"
+m2 <- "diagnosis ~ sd + Gender + (1|uniqueness) + (1|triangle)"
+m3 <- "diagnosis ~ mean + Gender + (1|uniqueness) + (1|triangle)"
+m4 <- "diagnosis ~ median + Gender + (1|uniqueness) + (1|triangle)"
+m5 <- "diagnosis ~ iqr + Gender + (1|uniqueness) + (1|triangle)"
+m6 <- "diagnosis ~ mean_abs + Gender + (1|uniqueness) + (1|triangle)"
+m7 <- "diagnosis ~ coef_var + Gender + (1|uniqueness) + (1|triangle)"
 
 model_list <- list(m1, m2, m3, m4, m5, m6, m7)
 ```
