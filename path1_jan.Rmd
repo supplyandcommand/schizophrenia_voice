@@ -221,12 +221,12 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
 
   # Return the mean of the recorded RMSEs
   return(cbind.data.frame('model' = model_name,
-           'SEN' = mean(performances_SEN),
-           'SPE' = mean(performances_SPE),
-           'PPV' = mean(performances_PPV),
-           'NPV' = mean(performances_NPV),
-           'AUC' = mean(performances_AUC),
-           'ACC' = mean(performances_ACC)))
+           'SEN' = mean(performances_SEN, na.rm = T),
+           'SPE' = mean(performances_SPE, na.rm = T),
+           'PPV' = mean(performances_PPV, na.rm = T),
+           'NPV' = mean(performances_NPV, na.rm = T),
+           'AUC' = mean(performances_AUC, na.rm = T),
+           'ACC' = mean(performances_ACC, na.rm = T)))
 
 }
 ```
@@ -234,13 +234,13 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
 
 ```{r model list}
 # creating model calls and putting them into list for later use
-m1 <- "diagnosis ~ range + Gender + (1|uniqueness) + (1|triangle)"
-m2 <- "diagnosis ~ sd + Gender + (1|uniqueness) + (1|triangle)"
-m3 <- "diagnosis ~ mean + Gender + (1|uniqueness) + (1|triangle)"
-m4 <- "diagnosis ~ median + Gender + (1|uniqueness) + (1|triangle)"
-m5 <- "diagnosis ~ iqr + Gender + (1|uniqueness) + (1|triangle)"
-m6 <- "diagnosis ~ mean_abs + Gender + (1|uniqueness) + (1|triangle)"
-m7 <- "diagnosis ~ coef_var + Gender + (1|uniqueness) + (1|triangle)"
+m1 <- "diagnosis ~ range + Gender + (1|uniqueness) + (1|study)"
+m2 <- "diagnosis ~ sd + Gender + (1|uniqueness) + (1|study)"
+m3 <- "diagnosis ~ mean + Gender + (1|uniqueness) + (1|study)"
+m4 <- "diagnosis ~ median + Gender + (1|uniqueness) + (1|study)"
+m5 <- "diagnosis ~ iqr + Gender + (1|uniqueness) + (1|study)"
+m6 <- "diagnosis ~ mean_abs + Gender + (1|uniqueness) + (1|study)"
+m7 <- "diagnosis ~ coef_var + Gender + (1|uniqueness) + (1|study)"
 
 model_list <- list(m1, m2, m3, m4, m5, m6, m7)
 ```
