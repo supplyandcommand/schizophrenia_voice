@@ -1,0 +1,320 @@
+---
+title: "Assignment 3 - Part 2 - Diagnosing Schizophrenia from Voice"
+author: "Riccardo Fusaroli"
+date: "October 17, 2017"
+output: html_document
+---
+
+## Assignment 3 - Diagnosing schizophrenia from voice
+
+In the previous part of the assignment you generated a bunch of "features", that is, of quantitative descriptors of voice in schizophrenia, focusing on pitch.
+In the course of this assignment we will use them to try to automatically diagnose schizophrenia from voice only, that is, relying on the set of features you produced last time, we will try to produce an automated classifier.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#packages
+## LOAD IN PACKAGES
+
+library(pacman)
+p_load(tidyverse, 
+       knitr, #kable()
+       lmerTest, #lmer()
+       caret, #sensitivity() etc.
+       MASS, #stepAIC()
+       pROC, #ci()
+       boot, #inv.logit()
+       groupdata2, #fold()
+       MuMIn, 
+       SDMTools)  #dredge()
+select <- dplyr::select
+
+## LOAD IN DATA
+
+data <- read.csv("data.csv") %>%
+  mutate(ID = factor(ID),
+         study = factor(study),
+         uniqueness = paste0(ID, diagnosis),
+         diagnosis = factor(diagnosis))
+
+clinic <- read.delim("A3_Clinic_Info.txt") %>%
+  rename(ID = Subject, 
+         study = Study) %>%
+  mutate(ID = factor(ID),
+         study = factor(study),
+         diagnosis = ifelse(Diagnosis == "Control", 0, 1),
+         uniqueness = paste0(ID, diagnosis)) %>%
+  dplyr::select(ID, study, Gender, uniqueness)
+
+
+## MERGE
+# left join = keeping everyone who appears in "data". Removing those who are in "clinic" only.
+# see https://docs.google.com/document/d/1csAffjmezQZHDmsOKzjSiGkD03BWxdDiJLSVOTRC98o/edit
+Bear <- left_join(data, clinic, by = c("uniqueness")) %>%
+  dplyr::select(-ID.y, -study.y) %>%
+  rename(ID = ID.x, study = study.x) %>%
+  mutate(uniqueness = as.numeric(uniqueness))
+
+
+## CLEAN UP AFTER YOURSELVES
+rm(data)
+rm(clinic)
+
+
+## s33d
+set.seed(1337)
+```
+
+### Question 1: Can you diagnose schizophrenia from pitch range only? If so, how well?
+
+Build a logistic regression to see whether you can diagnose schizophrenia from pitch range only.
+
+Calculate the different performance measures (accuracy, sensitivity, specificity, PPV, NPV, ROC curve) on a logistic regression using the full dataset. Don't forget the random effects!
+
+Then cross-validate the logistic regression and re-calculate performance on the testing folds. N.B. The cross-validation functions you already have should be tweaked: you need to calculate these new performance measures.
+
+N.B. the predict() function generates log odds (the full scale between minus and plus infinity). Log odds > 0 indicates a choice of 1, below a choice of 0.
+N.B. you need to decide whether calculate performance on each single test fold or save all the prediction for test folds in one datase, so to calculate overall performance.
+N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
+
+```{r scaling}
+# new df not to overwrite
+Bear_scaled <- Bear
+
+# MINMAX
+for (i in c(6:13)) {
+  minc = min(Bear_scaled[,i])
+  maxc = max(Bear_scaled[,i])
+  Bear_scaled[,i] = (Bear_scaled[,i]-minc)/(maxc-minc)
+}
+
+# keep her clean
+rm(i, maxc, minc)
+```
+
+```{r roc curve}
+model_range <- glmer(diagnosis ~ range + (1|ID) + (1|study), Bear_scaled, family= "binomial")
+
+range_pred <- inv.logit(predict(model_range, Bear_scaled, type = "response"))
+
+#ROC curve 
+rocCurve <- roc(response = Bear_scaled$diagnosis, 
+                predictor = range_pred)
+pROC::auc(rocCurve)
+ci(rocCurve)
+plot(rocCurve, legacy.axes = TRUE)
+
+```
+
+# CROSSVALIDATION
+
+```{r folds}
+# adds a new column with fold number
+Bear_scaled <- fold(Bear_scaled, k = 5, 
+             cat_col = 'diagnosis', #balances ratio between shizo/control
+             id_col = 'ID') #keeps same people in same folds
+
+
+```
+
+```{r loop}
+# heavily inspired by Ludvig Renbo Olsen
+# https://cran.r-project.org/web/packages/groupdata2/vignettes/cross-validation_with_groupdata2.html
+
+crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
+  # Initialize empty list for recording performances
+  performances_SEN <- c()
+  performances_SPE <- c()
+  performances_PPV <- c()
+  performances_NPV <- c()
+  performances_AUC <- c()
+  performances_ACC <- c()
+
+  
+    # One iteration per fold
+  for (fold in 1:k){   #from 1 to k
+    
+    # Create training set for this iteration
+    # Subset all the datapoints where .folds does not match the current fold
+    training_set <- data[data$.folds != fold,]
+    
+    # Create test set for this iteration
+    # Subset all the datapoints where .folds matches the current fold
+    testing_set <- data[data$.folds == fold,]
+    
+    ## Train model
+
+    # If there is a random effect,
+    # use lmer() to train model
+    # else use lm()
+
+    model <- glmer(model_name, training_set, family = "binomial")
+    
+
+    ## Test model
+
+    # Predict the dependent variable in the testing_set with the trained model
+    predicted <- inv.logit(predict(model, testing_set, allow.new.levels=TRUE))
+    
+    # Make predicted into factors
+    predicted[predicted < 0.5] = "0"
+    predicted[predicted >= 0.5] = "1"
+    predicted <- factor(predicted)
+    
+    # Get model performance metrics between the predicted and the observed
+    SEN <- caret::sensitivity(predicted, testing_set[[dependent]], positive = pos)
+    
+    SPE <- caret::specificity(predicted, testing_set[[dependent]], negative = neg)
+    
+    PPV <- posPredValue(predicted, testing_set[[dependent]], positive = pos)
+    
+    NPV <- negPredValue(predicted, testing_set[[dependent]], negative = neg)
+    
+    predicted <- as.numeric(predicted)
+    rocCurve <- roc(response = testing_set$diagnosis, predictor = predicted)
+    AUC <- pROC::auc(rocCurve)
+    
+    testing_set$predicted <- predicted
+    testing_correct <- filter(testing_set, diagnosis == predicted)
+    ACC <- nrow(testing_correct) / nrow(testing_set)
+    
+    # Add the to the performance list
+    performances_SEN[fold] <- SEN
+    performances_SPE[fold] <- SPE
+    performances_PPV[fold] <- PPV
+    performances_NPV[fold] <- NPV
+    performances_AUC[fold] <- AUC
+    performances_ACC[fold] <- ACC
+
+  }
+
+  # Return the mean of the recorded RMSEs
+  return(cbind.data.frame('model' = model_name,
+           'SEN' = mean(performances_SEN),
+           'SPE' = mean(performances_SPE),
+           'PPV' = mean(performances_PPV),
+           'NPV' = mean(performances_NPV),
+           'AUC' = mean(performances_AUC),
+           'ACC' = mean(performances_ACC)))
+
+}
+```
+
+
+```{r model list}
+m1 <- "diagnosis ~ range + Gender + (1|ID) + (1|triangle)"
+m2 <- "diagnosis ~ sd + Gender + (1|ID) + (1|triangle)"
+m3 <- "diagnosis ~ mean + Gender + (1|ID) + (1|triangle)"
+m4 <- "diagnosis ~ median + Gender + (1|ID) + (1|triangle)"
+m5 <- "diagnosis ~ iqr + Gender + (1|ID) + (1|triangle)"
+m6 <- "diagnosis ~ mean_abs + Gender + (1|ID) + (1|triangle)"
+m7 <- "diagnosis ~ coef_var + Gender + (1|ID) + (1|triangle)"
+
+model_list <- list(m1, m2, m3, m4, m5, m6, m7)
+```
+
+
+```{r output}
+cross_talbe <- map_df(
+            #list to loop trough
+            model_list,
+            #function to use
+            crossvalidation_nation,
+            # arguments
+            data = Bear_scaled, 
+            k = 5,
+            dependent = "diagnosis", 
+            pos = "1", 
+            neg = "0")
+
+cross_talbe %>%
+  kable() #nice output
+
+```
+
+
+
+### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
+UNDER CONSTRUCTION
+```{r}
+library(corrplot)
+
+Bear$diagnosis <- as.numeric(Bear$diagnosis)
+cor_data = select(Bear, diagnosis, mean, sd, range, iqr, median, mean_abs, coef_var, se) 
+
+#only weak correlations 
+corr = round(cor(cor_data,method = "spearman"),2)
+corrplot.mixed(corr)
+
+#building models 
+
+
+```
+
+
+### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
+this section contains:
+- intuition approach (try to guess which model would be nice)
+- brute force approach (p-hack the shit out of it)
+
+
+UNDER CONSTRUCITON - Magnus&Jan in Royal session
+```{r}
+## models
+
+# model based on momentarily intuitions
+intuition <- glmer(diagnosis ~ range + Gender + mean + coef_var + 
+                     (1|ID) + (1|study), Bear_scaled, family = "binomial")
+
+# model based on what we though would fuck up
+bad <- glmer(diagnosis ~ iqr + Gender + median + 
+                     (1|ID) + (1|study), Bear_scaled, family = "binomial")
+
+
+
+## cross-validation
+
+intuition_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = intuition, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+
+bad_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
+                       model = bad, 
+                       dependent = "diagnosis", pos = "1", neg = "0")
+
+```
+
+Now it's time to go wild! Use all (voice-related) variables and interactions you can think of. Compare models and select the best performing model you can find.
+
+Remember:
+- Out-of-sample error crucial to build the best model!
+- After choosing the model, send Malte and Riccardo the code of your model
+
+```{r phack brute}
+fix_bear <- names(Bear_scaled)[6:13] %>%
+  paste(collapse=" + ") %>%
+  paste0("diagnosis ~ ", .)
+  
+g1 <- glmer(paste0(fix_bear," + (1|ID) + (1|study)"), Bear_scaled, family= "binomial") %>%
+  stepAIC(trace = FALSE)
+
+```
+
+```{r phack manual and lame}
+g1 <- "diagnosis ~ mean + sd + range + iqr + median + mean_abs + coef_var + se + (1|ID) + (1|study)"
+```
+
+
+### Question 4: Properly report the results
+
+METHODS SECTION: how did you analyse the data? That is, how did you extract the data, designed the models and compared their performance?
+
+RESULTS SECTION: can you diagnose schizophrenia based on voice? which features are used? Comment on the difference between the different performance measures.
+
+### Bonus question 5
+
+You have some additional bonus data involving speech rate, pauses, etc. Include them in your analysis. Do they improve classification?
+
+### Bonus question 6
+
+Logistic regression is only one of many classification algorithms. Try using others and compare performance. Some examples: Discriminant Function, Random Forest, Support Vector Machine, etc. The package caret provides them.
