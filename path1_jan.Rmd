@@ -307,11 +307,13 @@ bad <- glmer(diagnosis ~ iqr + Gender + median +
 ## cross-validation
 
 intuition_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model = intuition, 
+                       model_name = "diagnosis ~ range + Gender + mean + coef_var + 
+                     (1|ID) + (1|study)", 
                        dependent = "diagnosis", pos = "1", neg = "0")
 
 bad_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model = bad, 
+                       model_name = "diagnosis ~ iqr + Gender + median + 
+                     (1|ID) + (1|study)", 
                        dependent = "diagnosis", pos = "1", neg = "0")
 
 ```
