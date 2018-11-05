@@ -43,14 +43,14 @@ clinic <- read.delim("A3_Clinic_Info.txt") %>%
          study = factor(study),
          diagnosis = ifelse(Diagnosis == "Control", 0, 1),
          uniqueness = paste0(ID, diagnosis)) %>%
-  select(ID, study, Gender, uniqueness)
+  dplyr::select(ID, study, Gender, uniqueness)
 
 
 ## MERGE
 # left join = keeping everyone who appears in "data". Removing those who are in "clinic" only.
 # see https://docs.google.com/document/d/1csAffjmezQZHDmsOKzjSiGkD03BWxdDiJLSVOTRC98o/edit
 Bear <- left_join(data, clinic, by = c("uniqueness")) %>%
-  select(-ID.y, -study.y) %>%
+  dplyr::select(-ID.y, -study.y) %>%
   rename(ID = ID.x, study = study.x) %>%
   mutate(uniqueness = as.numeric(uniqueness))
 
@@ -225,7 +225,7 @@ UNDER CONSTRUCTION
 library(corrplot)
 
 Bear$diagnosis <- as.numeric(Bear$diagnosis)
-cor_data = select(Bear, diagnosis, mean, sd, range, iqr, median, mean_abs, coef_var, se) 
+cor_data = dplyr::select(Bear, diagnosis, mean, sd, range, iqr, median, mean_abs, coef_var, se) 
 
 #only weak correlations 
 corr = round(cor(cor_data,method = "spearman"),2)
