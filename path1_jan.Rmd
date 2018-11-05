@@ -27,6 +27,7 @@ p_load(tidyverse,
        groupdata2, #fold()
        MuMIn)  #dredge()
 
+select <- dplyr::select
 
 ## LOAD IN DATA
 
@@ -43,14 +44,14 @@ clinic <- read.delim("A3_Clinic_Info.txt") %>%
          study = factor(study),
          diagnosis = ifelse(Diagnosis == "Control", 0, 1),
          uniqueness = paste0(ID, diagnosis)) %>%
-  select(ID, study, Gender, uniqueness)
+  dplyr::select(ID, study, Gender, uniqueness)
 
 
 ## MERGE
 # left join = keeping everyone who appears in "data". Removing those who are in "clinic" only.
 # see https://docs.google.com/document/d/1csAffjmezQZHDmsOKzjSiGkD03BWxdDiJLSVOTRC98o/edit
 Bear <- left_join(data, clinic, by = c("uniqueness")) %>%
-  select(-ID.y, -study.y) %>%
+  dplyr::select(-ID.y, -study.y) %>%
   rename(ID = ID.x, study = study.x) %>%
   mutate(uniqueness = as.numeric(uniqueness))
 
@@ -87,7 +88,7 @@ for (i in c(6:13)) {
   Bear_scaled[,i] = (Bear_scaled[,i]-minc)/(maxc-minc)
 }
 
-# keep her clean
+# keep it clean
 rm(i, maxc, minc)
 ```
 
@@ -125,6 +126,7 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
   performances_SPE <- c()
   performances_PPV <- c()
   performances_NPV <- c()
+  performances_AUC <- c()
   
   # One iteration per fold
   for (fold in 1:k){
@@ -165,12 +167,17 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     PPV <- posPredValue(predicted, testing_set[[dependent]], positive = pos)
     
     NPV <- negPredValue(predicted, testing_set[[dependent]], negative = neg)
+    
+    ROC <- roc(response = testing_set[[dependent]], predictor = as.numeric(predicted))
+    
+    AUC <- auc(ROC)
 
     # Add the to the performance list
     performances_SEN[fold] <- SEN
     performances_SPE[fold] <- SPE
     performances_PPV[fold] <- PPV
     performances_NPV[fold] <- NPV
+    performances_AUC[fold] <- AUC
 
 
   }
@@ -180,13 +187,15 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
            'SEN' = mean(performances_SEN),
            'SPE' = mean(performances_SPE),
            'PPV' = mean(performances_PPV),
-           'NPV' = mean(performances_NPV)))
+           'NPV' = mean(performances_NPV),
+           'AUC' = mean(performances_AUC)))
 
 }
 ```
 
 
 ```{r model list}
+# creating model calls and putting them into list for later use
 m1 <- "diagnosis ~ range + Gender + (1|ID) + (1|triangle)"
 m2 <- "diagnosis ~ sd + Gender + (1|ID) + (1|triangle)"
 m3 <- "diagnosis ~ mean + Gender + (1|ID) + (1|triangle)"
@@ -200,7 +209,7 @@ model_list <- list(m1, m2, m3, m4, m5, m6, m7)
 
 
 ```{r output}
-cross_talbe <- map_df(
+cross_table <- map_df(
             #list to loop trough
             model_list,
             #function to use
@@ -212,7 +221,7 @@ cross_talbe <- map_df(
             pos = "1", 
             neg = "0")
 
-cross_talbe %>%
+cross_table %>%
   kable()
 
 ```
@@ -225,7 +234,7 @@ UNDER CONSTRUCTION
 library(corrplot)
 
 Bear$diagnosis <- as.numeric(Bear$diagnosis)
-cor_data = select(Bear, diagnosis, mean, sd, range, iqr, median, mean_abs, coef_var, se) 
+cor_data = dplyr::select(Bear, diagnosis, mean, sd, range, iqr, median, mean_abs, coef_var, se) 
 
 #only weak correlations 
 corr = round(cor(cor_data,method = "spearman"),2)
