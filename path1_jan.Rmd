@@ -103,6 +103,7 @@ model_range <- glmer(diagnosis ~ range + (1|ID) + (1|study), Bear_scaled, family
 
 # predicting response 
 range_pred <- inv.logit(predict(model_range, Bear_scaled, allow.new.levels = TRUE))
+range_pred_num <- inv.logit(predict(model_range, Bear_scaled, allow.new.levels = TRUE))
 
 # turning it into 2 level factor
 range_pred[range_pred < 0.5] = "0"
@@ -129,9 +130,10 @@ acc_fun <- function(table) {
 # accuracy score
 acc_fun(table_range)
 
+
 #ROC curve 
 rocCurve <- roc(response = Bear_scaled$diagnosis, 
-                predictor = as.numeric(range_pred))
+                predictor = range_pred_num)
 pROC::auc(rocCurve)
 ci(rocCurve)
 plot(rocCurve, legacy.axes = TRUE)
@@ -141,6 +143,7 @@ plot(rocCurve, legacy.axes = TRUE)
 # CROSSVALIDATION
 
 ```{r folds}
+set.seed(1337)
 # adds a new column with fold number
 Bear_scaled <- fold(Bear_scaled, k = 5, 
              cat_col = 'diagnosis', #balances ratio between shizo/control
@@ -247,6 +250,7 @@ model_list <- list(m1, m2, m3, m4, m5, m6, m7)
 
 
 ```{r output}
+set.seed(1337)
 cross_table <- map_df(
             #list to loop trough
             model_list,
@@ -258,9 +262,6 @@ cross_table <- map_df(
             dependent = "diagnosis", 
             pos = "1", 
             neg = "0")
-
-cross_table %>%
-  kable()
 
 ```
 
