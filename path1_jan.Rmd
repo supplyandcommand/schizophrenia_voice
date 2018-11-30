@@ -93,8 +93,9 @@ rm(i, maxc, minc)
 ```
 
 
-# range as predictor
-```{r range}
+# Q1: range as predictor
+Training model
+```{r range model}
 ## range model
 model_range <- glmer(diagnosis ~ range + (1|ID) + (1|study), Bear_scaled, family= "binomial")
 
@@ -108,14 +109,18 @@ range_pred_num <- inv.logit(predict(model_range, Bear_scaled, allow.new.levels =
 # turning it into 2 level factor
 range_pred[range_pred < 0.5] = "0"
 range_pred[range_pred >= 0.5] = "1"
+```
 
-
-
+## old section
+DON'T RUN THIS and maybe delte this
+```{r range performance}
 ## SENSITIVITY SPECIFICITY
 caret::sensitivity(factor(range_pred), factor(Bear_scaled$diagnosis), positive = "1")
 caret::specificity(factor(range_pred), factor(Bear_scaled$diagnosis), negative = "0")
 
-
+## PPV / NPV
+PPV <- posPredValue(predicted, testing_set[[dependent]], positive = pos)
+NPV <- negPredValue(predicted, testing_set[[dependent]], negative = neg)
 
 ## ACCURACY
 # table to asses
@@ -140,8 +145,9 @@ plot(rocCurve, legacy.axes = TRUE)
 
 ```
 
-# CROSSVALIDATION
 
+# CROSSVALIDATION
+-creating folds
 ```{r folds}
 set.seed(1337)
 # adds a new column with fold number
@@ -151,6 +157,7 @@ Bear_scaled <- fold(Bear_scaled, k = 5,
 
 ```
 
+-define funciton
 ```{r loop}
 # heavily inspired by Ludvig Renbo Olsen
 # https://cran.r-project.org/web/packages/groupdata2/vignettes/cross-validation_with_groupdata2.html
@@ -163,6 +170,7 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
   performances_NPV <- c()
   performances_AUC <- c()
   performances_ACC <- c()
+  performances_WARNING <- c()
 
   
     # One iteration per fold
@@ -181,9 +189,9 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     # If there is a random effect,
     # use lmer() to train model
     # else use lm()
-
-    model <- glmer(model_name, training_set, family = "binomial")
     
+    model <- glmer(model_name, training_set, family = "binomial")
+
 
     ## Test model
 
@@ -219,6 +227,7 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     performances_NPV[fold] <- NPV
     performances_AUC[fold] <- AUC
     performances_ACC[fold] <- ACC
+    performances_WARNING[fold] <- if(is(model,"warning")) warning
 
   }
 
@@ -234,6 +243,51 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
 }
 ```
 
+
+## ID vs uniqueness debate
+Q1) Gender as a fixed predictor?
+Q2) Uniquness OR ID as random effect?
+```{r}
+#Q1 ID
+rm1 <- 'diagnosis ~ range + (1|ID) + (1|study)'
+rm2 <- 'diagnosis ~ range + Gender + (1|ID) + (1|study)'
+
+#Q1 uniqueness
+rm3 <- 'diagnosis ~ range + (1|uniqueness) + (1|study)'
+rm4 <- 'diagnosis ~ range + Gender + (1|uniqueness) + (1|study)'
+
+id_uniq_list <- list(rm1, rm2, rm3, rm4)
+
+id_uniq_perf <- map_df(
+            #list to loop trough
+            id_uniq_list,
+            #function to use
+            crossvalidation_nation,
+            # arguments
+            data = Bear_scaled, 
+            k = 5,
+            dependent = "diagnosis", 
+            pos = "1", 
+            neg = "0")
+```
+
+
+## ANSWER 1
+Meassuring performance of range model
+```{r}
+range_model <- 'diagnosis ~ range + Gender + (1|ID) + (1|study)'
+
+range_performance <- crossvalidation_nation(Bear_scaled, 
+                                            k = 5, 
+                                            model_name = range_model,
+                                            dependent = "diagnosis", 
+                                            pos = "1", 
+                                            neg = "0")
+```
+
+
+
+# QUESTION 2: find best predictor
 
 ```{r model list}
 # creating model calls and putting them into list for later use
