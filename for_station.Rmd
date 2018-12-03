@@ -38,7 +38,8 @@ library(buildmer)
 
 # DATA
 ```{r}
-Bear_scaled <- read_csv("Bear_scaled_fold.csv")
+Bear_scaled <- read_csv("Bear_scaled_fold.csv") %>%
+  mutate(diagnosis = factor(diagnosis))
 ```
 
 
