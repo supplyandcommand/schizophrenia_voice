@@ -6,7 +6,7 @@ output: html_document
 ---
 
 PHACKING SCRIPT FOR STATIONARY COMPUTERS IN THE COMPUTER ROOM
-
+# FIRST TIME SETUP
 ```{r setup, include=FALSE}
 install.packages("installr")
 library(installr)
@@ -14,6 +14,10 @@ library(installr)
 updateR()
 
 install.packages("pacman")
+```
+
+# SECOND TIME SETUP
+```{r}
 library(pacman)
 
 p_load(tidyverse, 
@@ -24,9 +28,13 @@ p_load(tidyverse,
        pROC, #ci()
        boot, #inv.logit()
        groupdata2, #fold()
-       buildmer, #black-box
+       devtools,
        MuMIn)  #dredge()
+
+install_github('cvoeten/buildmer')
+library(buildmer)
 ```
+
 
 # DATA
 ```{r}
