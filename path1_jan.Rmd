@@ -94,14 +94,15 @@ rm(i, maxc, minc)
 
 
 # Q1: range as predictor
-Training model
+Training model.
+Following range model was the most reliable as shown by cross-validation
 ```{r range model}
 ## range model
-model_range <- glmer(diagnosis ~ range + (1|ID) + (1|study), Bear_scaled, family= "binomial")
+model_range <- glmer(diagnosis ~ range + Gender + (1|ID) + (1|study), 
+                     Bear_scaled, family= "binomial")
 
 
 ## PREDICT
-
 # predicting response 
 range_pred <- inv.logit(predict(model_range, Bear_scaled, allow.new.levels = TRUE))
 range_pred_num <- inv.logit(predict(model_range, Bear_scaled, allow.new.levels = TRUE))
@@ -111,16 +112,16 @@ range_pred[range_pred < 0.5] = "0"
 range_pred[range_pred >= 0.5] = "1"
 ```
 
-## old section
-DON'T RUN THIS and maybe delte this
+## ANSWER 1
+tidyer output later on (id_uniq_perf)
 ```{r range performance}
 ## SENSITIVITY SPECIFICITY
 caret::sensitivity(factor(range_pred), factor(Bear_scaled$diagnosis), positive = "1")
 caret::specificity(factor(range_pred), factor(Bear_scaled$diagnosis), negative = "0")
 
 ## PPV / NPV
-PPV <- posPredValue(predicted, testing_set[[dependent]], positive = pos)
-NPV <- negPredValue(predicted, testing_set[[dependent]], negative = neg)
+PPV <- posPredValue(factor(range_pred), factor(Bear_scaled$diagnosis), positive = "1")
+NPV <- negPredValue(factor(range_pred), factor(Bear_scaled$diagnosis), negative = "0")
 
 ## ACCURACY
 # table to asses
@@ -170,7 +171,6 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
   performances_NPV <- c()
   performances_AUC <- c()
   performances_ACC <- c()
-  performances_WARNING <- c()
 
   
     # One iteration per fold
@@ -227,7 +227,6 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     performances_NPV[fold] <- NPV
     performances_AUC[fold] <- AUC
     performances_ACC[fold] <- ACC
-    performances_WARNING[fold] <- if(is(model,"warning")) warning
 
   }
 
@@ -245,18 +244,24 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
 
 
 ## ID vs uniqueness debate
-Q1) Gender as a fixed predictor?
-Q2) Uniquness OR ID as random effect?
+Reasoning behind diagnosis ~ range + Gender + (1|ID) + (1|study)
+
+Q: Gender as a fixed effect?
+A: yes, it shows a more reliable performance than the model which excludes gender alltogether.
+
+Decrease in SEN is acompanied by increase in SPE and overall accuracy is also slighlty higher. Similar tendency happens between PPV and NPV. 
+
+The model with gender as random effect is performing similarly good. The reason for it's rejection is based on a marginal difference in SEN and SPE (gender as fixed effect is performing slightly better) and for conceptual reasons (gender is an obvious voice predictor)
+
 ```{r}
+set.seed(1337)
+
 #Q1 ID
 rm1 <- 'diagnosis ~ range + (1|ID) + (1|study)'
 rm2 <- 'diagnosis ~ range + Gender + (1|ID) + (1|study)'
+rm3 <- 'diagnosis ~ range + (1|Gender) + (1|ID) + (1|study)'
 
-#Q1 uniqueness
-rm3 <- 'diagnosis ~ range + (1|uniqueness) + (1|study)'
-rm4 <- 'diagnosis ~ range + Gender + (1|uniqueness) + (1|study)'
-
-id_uniq_list <- list(rm1, rm2, rm3, rm4)
+id_uniq_list <- list(rm1, rm2, rm3)
 
 id_uniq_perf <- map_df(
             #list to loop trough
@@ -272,36 +277,24 @@ id_uniq_perf <- map_df(
 ```
 
 
-## ANSWER 1
-Meassuring performance of range model
-```{r}
-range_model <- 'diagnosis ~ range + Gender + (1|ID) + (1|study)'
-
-range_performance <- crossvalidation_nation(Bear_scaled, 
-                                            k = 5, 
-                                            model_name = range_model,
-                                            dependent = "diagnosis", 
-                                            pos = "1", 
-                                            neg = "0")
-```
-
-
-
-# QUESTION 2: find best predictor
+### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
+# model list
 
 ```{r model list}
 # creating model calls and putting them into list for later use
-m1 <- "diagnosis ~ range + Gender + (1|uniqueness) + (1|study)"
-m2 <- "diagnosis ~ sd + Gender + (1|uniqueness) + (1|study)"
-m3 <- "diagnosis ~ mean + Gender + (1|uniqueness) + (1|study)"
-m4 <- "diagnosis ~ median + Gender + (1|uniqueness) + (1|study)"
-m5 <- "diagnosis ~ iqr + Gender + (1|uniqueness) + (1|study)"
-m6 <- "diagnosis ~ mean_abs + Gender + (1|uniqueness) + (1|study)"
-m7 <- "diagnosis ~ coef_var + Gender + (1|uniqueness) + (1|study)"
+m1 <- "diagnosis ~ range + Gender + (1|ID) + (1|study)"
+m2 <- "diagnosis ~ sd + Gender + (1|ID) + (1|study)"
+m3 <- "diagnosis ~ mean + Gender + (1|ID) + (1|study)"
+m4 <- "diagnosis ~ median + Gender + (1|ID) + (1|study)"
+m5 <- "diagnosis ~ iqr + Gender + (1|ID) + (1|study)"
+m6 <- "diagnosis ~ mean_abs + Gender + (1|ID) + (1|study)"
+m7 <- "diagnosis ~ coef_var + Gender + (1|ID) + (1|study)"
 
 model_list <- list(m1, m2, m3, m4, m5, m6, m7)
 ```
 
+
+### cross-validation loop
 
 ```{r output}
 set.seed(1337)
@@ -319,22 +312,14 @@ cross_table <- map_df(
 
 ```
 
-
-
-### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
-UNDER CONSTRUCTION
+### best predictor
+Median seems to be the best predictor. It scores the highest on every performance meassure except for accuracy.
 ```{r}
-library(corrplot)
-
-Bear$diagnosis <- as.numeric(Bear$diagnosis)
-cor_data = dplyr::select(Bear, diagnosis, mean, sd, range, iqr, median, mean_abs, coef_var, se) 
-
-#only weak correlations 
-corr = round(cor(cor_data,method = "spearman"),2)
-corrplot.mixed(corr)
-
-#building models 
-
+mean_per <- cross_table %>%
+  select(-AUC) %>%
+  rowwise() %>%
+  mutate(mean_per = mean(c(SEN, SPE, PPV, NPV)),
+         sd_per = sd(c(SEN, SPE, PPV, NPV)))
 
 ```
 
@@ -342,19 +327,27 @@ corrplot.mixed(corr)
 ### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
 this section contains:
 - intuition approach (try to guess which model would be nice)
-- brute force approach (p-hack the shit out of it)
+- black box approach (automated model selection)
+- not working: brute force approach (p-hacking loop)
 
+this section does not contai (but should):
+- NO OUT-OF-SAMPLE ERROR
 
-UNDER CONSTRUCITON - Magnus&Jan in Royal session
+## intuition approach
+Models were build based on performance of individual predictors:
+median > mean
+iqr > range
+
+However, both models perform very similarly and that is: not good enough. 
 ```{r}
 ## models
 
 # model based on momentarily intuitions
-intuition <- glmer(diagnosis ~ range + Gender + mean + coef_var + 
+intuition <- glmer(diagnosis ~ median + iqr + coef_var + Gender +
                      (1|ID) + (1|study), Bear_scaled, family = "binomial")
 
 # model based on what we though would fuck up
-bad <- glmer(diagnosis ~ iqr + Gender + median + 
+bad <- glmer(diagnosis ~ mean + range + coef_var + Gender + 
                      (1|ID) + (1|study), Bear_scaled, family = "binomial")
 
 
@@ -362,12 +355,12 @@ bad <- glmer(diagnosis ~ iqr + Gender + median +
 ## cross-validation
 
 intuition_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model_name = "diagnosis ~ range + Gender + mean + coef_var + 
+                       model_name = "diagnosis ~ median + iqr + coef_var + Gender +
                      (1|ID) + (1|study)", 
                        dependent = "diagnosis", pos = "1", neg = "0")
 
 bad_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model_name = "diagnosis ~ iqr + Gender + median + 
+                       model_name = "diagnosis ~ mean + range + coef_var + Gender + 
                      (1|ID) + (1|study)", 
                        dependent = "diagnosis", pos = "1", neg = "0")
 
@@ -379,6 +372,58 @@ Remember:
 - Out-of-sample error crucial to build the best model!
 - After choosing the model, send Malte and Riccardo the code of your model
 
+## BLACK BOX APPROACH
+Using automated model selection to generate the best formula (based on AIC)
+```{r}
+a <- buildmer(diagnosis ~ mean + sd + range + iqr + 
+                median + mean_abs + coef_var + se + 
+                Gender + (1|ID) + (1|study), 
+              Bear_scaled, family = "binomial")
+
+
+buildmer_best <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)"
+
+best_model <- glmer(diagnosis ~ se + mean + iqr + mean_abs + 
+                      coef_var + Gender + (1 | study), Bear_scaled, family = "binomial")
+
+best <- crossvalidation_nation(data = Bear_scaled, k = 5, 
+                               model_name = buildmer_best, 
+                               dependent = "diagnosis", pos = "1", neg = "0")
+```
+
+visualizing the "best model"
+```{r}
+Bear_best <- Bear_scaled %>%
+  ungroup() %>%
+  mutate(pred_best_num = inv.logit(predict(best_model, Bear_scaled, 
+                               allow.new.levels=TRUE)),
+         pred_best = ifelse(pred_best_num < 0.5, 0, 1))
+    
+
+Bear_best %>%
+  mutate(diagnosis = ifelse(diagnosis == 0, "control", "schizophrenic"),
+         pred_best = ifelse(pred_best == 0, "control", "schizophrenic")) %>%
+  ggplot(aes(diagnosis, pred_best_num, color = factor(pred_best))) +
+  geom_jitter() +
+  theme_bw() +
+  #theme(axis.text.y = element_text(angle = 90, hjust = 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(title = "Model performance", 
+       subtitle = "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)",
+       color = "model prediction", 
+       y = "model prediction", 
+       x = "true diagnosis")
+
+ Bear_best %>%
+  ggplot(aes(diagnosis, fill = factor(pred_best))) +
+  geom_bar(position = "fill") +
+  theme_bw() +
+  labs(title = "Model performance", subtitle = "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)", fill = "model prediction", x = "true diagnosis")
+```
+
+
+## brute force open source
+NOT WORKING
 ```{r phack brute}
 fix_bear <- names(Bear_scaled)[6:13] %>%
   paste(collapse=" + ") %>%
