@@ -25,6 +25,7 @@ p_load(tidyverse,
        pROC, #ci()
        boot, #inv.logit()
        groupdata2, #fold()
+       buildmer, #black-box
        MuMIn)  #dredge()
 
 select <- dplyr::select
@@ -366,76 +367,131 @@ bad_cross = crossvalidation_nation(data = Bear_scaled, k = 5,
 
 ```
 
-Now it's time to go wild! Use all (voice-related) variables and interactions you can think of. Compare models and select the best performing model you can find.
 
-Remember:
-- Out-of-sample error crucial to build the best model!
-- After choosing the model, send Malte and Riccardo the code of your model
 
 ## BLACK BOX APPROACH
 Using automated model selection to generate the best formula (based on AIC)
+-order, backward
 ```{r}
-a <- buildmer(diagnosis ~ mean + sd + range + iqr + 
-                median + mean_abs + coef_var + se + 
-                Gender + (1|ID) + (1|study), 
+a2 <- buildmer(diagnosis ~ mean * sd * range * iqr * 
+                median * mean_abs * coef_var * se * 
+                Gender + (1|ID) + (1|study) + 
+                (mean|ID) + (mean|study) +
+                (sd|ID) + (sd|study) +
+                (iqr|ID) + (iqr|study) +
+                (median|ID) + (median|study) +
+                (mean_abs|ID) + (mean_abs|study) +
+                (coef_var|ID) + (coef_var|study) +
+                (se|ID) + (se|study), 
               Bear_scaled, family = "binomial")
 
 
 buildmer_best <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)"
 
-best_model <- glmer(diagnosis ~ se + mean + iqr + mean_abs + 
-                      coef_var + Gender + (1 | study), Bear_scaled, family = "binomial")
+best_model <- glmer(diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study),
+                    Bear_scaled, family = "binomial")
 
 best <- crossvalidation_nation(data = Bear_scaled, k = 5, 
                                model_name = buildmer_best, 
                                dependent = "diagnosis", pos = "1", neg = "0")
 ```
 
-visualizing the "best model"
+
+### visualizing black box
 ```{r}
 Bear_best <- Bear_scaled %>%
   ungroup() %>%
   mutate(pred_best_num = inv.logit(predict(best_model, Bear_scaled, 
                                allow.new.levels=TRUE)),
-         pred_best = ifelse(pred_best_num < 0.5, 0, 1))
-    
+         pred_best = ifelse(pred_best_num < 0.5, 0, 1),
+         pred_tab = case_when(pred_best == 0 & diagnosis == 0 ~ "true negative",
+                              pred_best == 0 & diagnosis == 1 ~ "false negative",
+                              pred_best == 1 & diagnosis == 0 ~ "false positive",
+                              pred_best == 1 & diagnosis == 1 ~ "true positive"))
 
-Bear_best %>%
-  mutate(diagnosis = ifelse(diagnosis == 0, "control", "schizophrenic"),
-         pred_best = ifelse(pred_best == 0, "control", "schizophrenic")) %>%
-  ggplot(aes(diagnosis, pred_best_num, color = factor(pred_best))) +
-  geom_jitter() +
-  theme_bw() +
-  #theme(axis.text.y = element_text(angle = 90, hjust = 0.5)) +
-  theme(panel.grid.major.x = element_blank()) +
-  labs(title = "Model performance", 
-       subtitle = "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)",
-       color = "model prediction", 
-       y = "model prediction", 
-       x = "true diagnosis")
+labels <- as.data.frame(table(Bear_best$pred_tab)) %>%
+  rename(pred_tab = Var1)
 
- Bear_best %>%
-  ggplot(aes(diagnosis, fill = factor(pred_best))) +
-  geom_bar(position = "fill") +
-  theme_bw() +
-  labs(title = "Model performance", subtitle = "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)", fill = "model prediction", x = "true diagnosis")
 ```
 
 
-## brute force open source
-NOT WORKING
+#### confusion matrix plotted 
+```{r}
+Bear_best %>%
+  mutate(diagnosis = ifelse(diagnosis == 0, "control", "schizophrenic"),
+         pred_best = ifelse(pred_best == 0, "control", "schizophrenic")) %>%
+  ggplot(aes(diagnosis, pred_best_num, fill = factor(pred_tab))) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(title = "Model performance", 
+       subtitle = "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)",
+       fill = "model prediction", 
+       y = "number of model predictions", 
+       x = "true diagnosis")
+```
+
+#### more plots
+```{r}
+Bear_best %>%
+  ggplot(aes(diagnosis, fill = factor(pred_best))) +
+  geom_bar(position = "fill") +
+  theme_bw() +
+  labs(title = "Model performance", 
+       subtitle = "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)",
+       fill = "model prediction", 
+       x = "true diagnosis")
+```
+
+
+## BRUTE FORCE
+BAD SECTION, PLESE NO
 ```{r phack brute}
 fix_bear <- names(Bear_scaled)[6:13] %>%
   paste(collapse=" + ") %>%
   paste0("diagnosis ~ ", .)
-  
-g1 <- glmer(paste0(fix_bear," + (1|ID) + (1|study)"), Bear_scaled, family= "binomial") %>%
-  stepAIC(trace = FALSE)
-
 ```
 
 ```{r phack manual and lame}
-g1 <- "diagnosis ~ mean + sd + range + iqr + median + mean_abs + coef_var + se + (1|ID) + (1|study)"
+g1 <- "diagnosis ~ median + Gender + (1|ID) + (1|study)"
+g2 <- "diagnosis ~ median + Gender + (median|ID) + (1|study)"
+g3 <- "diagnosis ~ median + Gender + (1|ID) + (median|study)"
+g4 <- "diagnosis ~ median + Gender + (median|ID) + (median|study)"
+
+g5 <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1|ID) + (1|study)"
+g6 <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (mean|ID) + (1|study)"
+g7 <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1|ID) + (mean|study)"
+g8 <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (mean|ID) + (median|study)"
+g9 <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (mean|study)"
+
+
+
+
+
+
+gmodel <- list(g1, g2, g3, g4)
+gmodel2 <- list(g5, g6, g7, g8, g9)
+```
+
+```{r}
+set.seed(1337)
+g_table <- map_df(
+            #list to loop trough
+            gmodel2,
+            #function to use
+            crossvalidation_nation,
+            # arguments
+            data = Bear_scaled, 
+            k = 5,
+            dependent = "diagnosis", 
+            pos = "1", 
+            neg = "0")
+
+mean_g2 <- g_table %>%
+  select(-AUC) %>%
+  rowwise() %>%
+  mutate(mean_per = mean(c(SEN, SPE, PPV, NPV)),
+         sd_per = sd(c(SEN, SPE, PPV, NPV)))
 ```
 
 
