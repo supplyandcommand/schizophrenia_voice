@@ -7,13 +7,13 @@ output: html_document
 
 PHACKING SCRIPT FOR STATIONARY COMPUTERS IN THE COMPUTER ROOM
 # FIRST TIME SETUP
-```{r setup, include=FALSE}
-install.packages("installr")
-library(installr)
-
-updateR()
-
-install.packages("pacman")
+```{r}
+# install.packages("installr")
+# library(installr)
+# 
+# updateR()
+# 
+# install.packages("pacman")
 ```
 
 # SECOND TIME SETUP
