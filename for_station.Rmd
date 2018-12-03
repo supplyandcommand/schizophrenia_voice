@@ -1,0 +1,191 @@
+---
+title: "for_station"
+author: "JK"
+date: "3 prosince 2018"
+output: html_document
+---
+
+PHACKING SCRIPT FOR STATIONARY COMPUTERS IN THE COMPUTER ROOM
+
+```{r setup, include=FALSE}
+install.packages("installr")
+library(installr)
+
+updateR()
+
+install.packages("pacman")
+library(pacman)
+
+p_load(tidyverse, 
+       knitr, #kable()
+       lmerTest, #lmer()
+       caret, #sensitivity() etc.
+       MASS, #stepAIC()
+       pROC, #ci()
+       boot, #inv.logit()
+       groupdata2, #fold()
+       buildmer, #black-box
+       MuMIn)  #dredge()
+```
+
+# DATA
+```{r}
+Bear_scaled <- read_csv("Bear_scaled_fold.csv")
+```
+
+
+# LIMITED CRAZINESS 
+## CV function
+```{r}
+crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
+  # Initialize empty list for recording performances
+  performances_SEN <- c()
+  performances_SPE <- c()
+  performances_PPV <- c()
+  performances_NPV <- c()
+  performances_AUC <- c()
+  performances_ACC <- c()
+
+  
+    # One iteration per fold
+  for (fold in 1:k){   #from 1 to k
+    
+    # Create training set for this iteration
+    # Subset all the datapoints where .folds does not match the current fold
+    training_set <- data[data$.folds != fold,]
+    
+    # Create test set for this iteration
+    # Subset all the datapoints where .folds matches the current fold
+    testing_set <- data[data$.folds == fold,]
+    
+    ## Train model
+
+    # If there is a random effect,
+    # use lmer() to train model
+    # else use lm()
+    
+    model <- glmer(model_name, training_set, family = "binomial")
+
+
+    ## Test model
+
+    # Predict the dependent variable in the testing_set with the trained model
+    predicted <- inv.logit(predict(model, testing_set, allow.new.levels=TRUE))
+    
+    # Make predicted into factors
+    predicted[predicted < 0.5] = "0"
+    predicted[predicted >= 0.5] = "1"
+    predicted <- factor(predicted)
+    
+    # Get model performance metrics between the predicted and the observed
+    SEN <- caret::sensitivity(predicted, testing_set[[dependent]], positive = pos)
+    
+    SPE <- caret::specificity(predicted, testing_set[[dependent]], negative = neg)
+    
+    PPV <- posPredValue(predicted, testing_set[[dependent]], positive = pos)
+    
+    NPV <- negPredValue(predicted, testing_set[[dependent]], negative = neg)
+    
+    predicted <- as.numeric(predicted)
+    rocCurve <- roc(response = testing_set$diagnosis, predictor = predicted)
+    AUC <- pROC::auc(rocCurve)
+    
+    testing_set$predicted <- predicted
+    testing_correct <- filter(testing_set, diagnosis == predicted)
+    ACC <- nrow(testing_correct) / nrow(testing_set)
+    
+    # Add the to the performance list
+    performances_SEN[fold] <- SEN
+    performances_SPE[fold] <- SPE
+    performances_PPV[fold] <- PPV
+    performances_NPV[fold] <- NPV
+    performances_AUC[fold] <- AUC
+    performances_ACC[fold] <- ACC
+
+  }
+
+  # Return the mean of the recorded RMSEs
+  return(cbind.data.frame('model' = model_name,
+           'SEN' = mean(performances_SEN, na.rm = T),
+           'SPE' = mean(performances_SPE, na.rm = T),
+           'PPV' = mean(performances_PPV, na.rm = T),
+           'NPV' = mean(performances_NPV, na.rm = T),
+           'AUC' = mean(performances_AUC, na.rm = T),
+           'ACC' = mean(performances_ACC, na.rm = T)))
+
+}
+```
+
+
+## all combinations
+```{r}
+X = c("mean", "sd", "range", "iqr", "median", "mean_abs", "coef_var", "se", "Gender")
+
+out <- unlist(lapply(1:9, function(n) {
+  # get combinations
+  combinations <- t(combn(X,n))
+  # collapse them into usable formulas:
+  formulas <- apply(combinations, 1, 
+                    function(row) paste0("diagnosis ~ ", 
+                                         paste0(row, collapse = " + "),
+                                         paste(" + (1|study)")))}))
+
+```
+
+
+## CV run
+```{r}
+set.seed(1337)
+cross_table <- map_df(
+            #list to loop trough
+            out,
+            #function to use
+            crossvalidation_nation,
+            # arguments
+            data = Bear_scaled, 
+            k = 5,
+            dependent = "diagnosis", 
+            pos = "1", 
+            neg = "0")
+
+write_csv(cross_table, "cross_table.csv")
+```
+
+## CV compare
+```{r}
+mean_per <- cross_table %>%
+  select(-AUC) %>%
+  rowwise() %>%
+  mutate(mean_per = mean(c(SEN, SPE, PPV, NPV)),
+         sd_per = sd(c(SEN, SPE, PPV, NPV)))
+```
+
+
+
+# ABSOLUTE CRAZYNESS
+## all interactions, all random
+```{r}
+all_interaction <- buildmer(diagnosis ~ mean * sd * range * iqr * 
+                median * mean_abs * coef_var * se * 
+                Gender + (1|ID) + (1|study) + 
+                (mean|ID) + (mean|study) +
+                (sd|ID) + (sd|study) +
+                (iqr|ID) + (iqr|study) +
+                (median|ID) + (median|study) +
+                (mean_abs|ID) + (mean_abs|study) +
+                (coef_var|ID) + (coef_var|study) +
+                (se|ID) + (se|study), 
+              Bear_scaled, family = "binomial")
+
+saveRDS(all_interaction, "all_interaction.Rds")
+```
+
+## all interations, one random effect
+```{r}
+some_interaction <- buildmer(diagnosis ~ mean * sd * range * iqr * 
+                median * mean_abs * coef_var * se * 
+                Gender + (1|study), 
+              Bear_scaled, family = "binomial")
+
+saveRDS(some_interaction, "some_interaction.Rds")
+```

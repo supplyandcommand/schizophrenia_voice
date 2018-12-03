@@ -373,6 +373,18 @@ bad_cross = crossvalidation_nation(data = Bear_scaled, k = 5,
 Using automated model selection to generate the best formula (based on AIC)
 -order, backward
 ```{r}
+a1 <- buildmer(diagnosis ~ mean + sd + range + iqr + 
+                median + mean_abs + coef_var + se + 
+                Gender + (1|ID) + (1|study) + 
+                (mean|ID) + (mean|study) +
+                (sd|ID) + (sd|study) +
+                (iqr|ID) + (iqr|study) +
+                (median|ID) + (median|study) +
+                (mean_abs|ID) + (mean_abs|study) +
+                (coef_var|ID) + (coef_var|study) +
+                (se|ID) + (se|study), 
+              Bear_scaled, family = "binomial")
+
 a2 <- buildmer(diagnosis ~ mean * sd * range * iqr * 
                 median * mean_abs * coef_var * se * 
                 Gender + (1|ID) + (1|study) + 
