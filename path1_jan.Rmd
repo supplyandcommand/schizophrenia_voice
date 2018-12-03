@@ -66,6 +66,8 @@ rm(clinic)
 set.seed(1337)
 ```
 
+
+
 ### Question 1: Can you diagnose schizophrenia from pitch range only? If so, how well?
 
 Build a logistic regression to see whether you can diagnose schizophrenia from pitch range only.
@@ -77,6 +79,7 @@ Then cross-validate the logistic regression and re-calculate performance on the 
 N.B. the predict() function generates log odds (the full scale between minus and plus infinity). Log odds > 0 indicates a choice of 1, below a choice of 0.
 N.B. you need to decide whether calculate performance on each single test fold or save all the prediction for test folds in one datase, so to calculate overall performance.
 N.B. Now you have two levels of structure: subject and study. Should this impact your cross-validation?
+
 
 ```{r scaling}
 # new df not to overwrite
@@ -92,6 +95,8 @@ for (i in c(6:13)) {
 # keep it clean
 rm(i, maxc, minc)
 ```
+
+
 
 
 # Q1: range as predictor
@@ -146,6 +151,8 @@ ci(rocCurve)
 plot(rocCurve, legacy.axes = TRUE)
 
 ```
+
+
 
 
 # CROSSVALIDATION
@@ -244,25 +251,29 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
 ```
 
 
+
 ## ID vs uniqueness debate
 Reasoning behind diagnosis ~ range + Gender + (1|ID) + (1|study)
 
-Q: Gender as a fixed effect?
-A: yes, it shows a more reliable performance than the model which excludes gender alltogether.
-
-Decrease in SEN is acompanied by increase in SPE and overall accuracy is also slighlty higher. Similar tendency happens between PPV and NPV. 
-
-The model with gender as random effect is performing similarly good. The reason for it's rejection is based on a marginal difference in SEN and SPE (gender as fixed effect is performing slightly better) and for conceptual reasons (gender is an obvious voice predictor)
+Including only study as random effect increases performance quite a bit
 
 ```{r}
 set.seed(1337)
 
-#Q1 ID
-rm1 <- 'diagnosis ~ range + (1|ID) + (1|study)'
-rm2 <- 'diagnosis ~ range + Gender + (1|ID) + (1|study)'
-rm3 <- 'diagnosis ~ range + (1|Gender) + (1|ID) + (1|study)'
+# minimalistic
+rm1 <- 'diagnosis ~ range + (1|study)'
+rm2 <- 'diagnosis ~ range + (1|ID)'
 
-id_uniq_list <- list(rm1, rm2, rm3)
+# min + gender
+rm3 <- 'diagnosis ~ range + Gender + (1|study)'
+rm4 <- 'diagnosis ~ range + Gender + (1|ID)'
+
+# combined / combined + gender
+rm5 <- 'diagnosis ~ range + (1|ID) + (1|study)'
+rm6 <- 'diagnosis ~ range + (1|Gender) + (1|ID) + (1|study)'
+
+
+id_uniq_list <- list(rm1, rm2, rm3, rm4, rm5, rm6)
 
 id_uniq_perf <- map_df(
             #list to loop trough
@@ -276,6 +287,8 @@ id_uniq_perf <- map_df(
             pos = "1", 
             neg = "0")
 ```
+
+
 
 
 ### Question 2 - Which single acoustic predictor is the best predictor of diagnosis?
@@ -299,7 +312,7 @@ model_list <- list(m1, m2, m3, m4, m5, m6, m7)
 
 ```{r output}
 set.seed(1337)
-cross_table <- map_df(
+cross_single <- map_df(
             #list to loop trough
             model_list,
             #function to use
@@ -313,26 +326,33 @@ cross_table <- map_df(
 
 ```
 
+
 ### best predictor
 Median seems to be the best predictor. It scores the highest on every performance meassure except for accuracy.
 ```{r}
-mean_per <- cross_table %>%
-  select(-AUC) %>%
+mean_single <- cross_single %>%
   rowwise() %>%
-  mutate(mean_per = mean(c(SEN, SPE, PPV, NPV)),
-         sd_per = sd(c(SEN, SPE, PPV, NPV)))
-
+  mutate(pos_mean = mean(c(SEN, PPV)),
+         pos_sd = sd(c(SEN, PPV)),
+         neg_mean = mean(c(SPE, NPV)),
+         neg_sd = sd(c(SPE, NPV)),
+         all_mean = mean(c(SEN, SPE, PPV, NPV)),
+         all_sd = sd(c(SEN, SPE, PPV, NPV)))
 ```
+
+
+
+
+
 
 
 ### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
 this section contains:
 - intuition approach (try to guess which model would be nice)
 - black box approach (automated model selection)
-- not working: brute force approach (p-hacking loop)
+- brute force approach (running all combinations of fixed effects trough c-v)
 
-this section does not contai (but should):
-- NO OUT-OF-SAMPLE ERROR
+
 
 ## intuition approach
 Models were build based on performance of individual predictors:
@@ -368,6 +388,7 @@ bad_cross = crossvalidation_nation(data = Bear_scaled, k = 5,
 ```
 
 
+--------------------------------------------
 
 ## BLACK BOX APPROACH
 Using automated model selection to generate the best formula (based on AIC)
@@ -385,17 +406,18 @@ a1 <- buildmer(diagnosis ~ mean + sd + range + iqr +
                 (se|ID) + (se|study), 
               Bear_scaled, family = "binomial")
 
-a2 <- buildmer(diagnosis ~ mean * sd * range * iqr * 
-                median * mean_abs * coef_var * se * 
-                Gender + (1|ID) + (1|study) + 
-                (mean|ID) + (mean|study) +
-                (sd|ID) + (sd|study) +
-                (iqr|ID) + (iqr|study) +
-                (median|ID) + (median|study) +
-                (mean_abs|ID) + (mean_abs|study) +
-                (coef_var|ID) + (coef_var|study) +
-                (se|ID) + (se|study), 
-              Bear_scaled, family = "binomial")
+# takes a few years to run
+# a2 <- buildmer(diagnosis ~ mean * sd * range * iqr * 
+#                 median * mean_abs * coef_var * se * 
+#                 Gender + (1|ID) + (1|study) + 
+#                 (mean|ID) + (mean|study) +
+#                 (sd|ID) + (sd|study) +
+#                 (iqr|ID) + (iqr|study) +
+#                 (median|ID) + (median|study) +
+#                 (mean_abs|ID) + (mean_abs|study) +
+#                 (coef_var|ID) + (coef_var|study) +
+#                 (se|ID) + (se|study), 
+#               Bear_scaled, family = "binomial")
 
 
 buildmer_best <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)"
@@ -409,7 +431,7 @@ best <- crossvalidation_nation(data = Bear_scaled, k = 5,
 ```
 
 
-### visualizing black box
+### categorizing preditions
 ```{r}
 Bear_best <- Bear_scaled %>%
   ungroup() %>%
@@ -421,29 +443,9 @@ Bear_best <- Bear_scaled %>%
                               pred_best == 1 & diagnosis == 0 ~ "false positive",
                               pred_best == 1 & diagnosis == 1 ~ "true positive"))
 
-labels <- as.data.frame(table(Bear_best$pred_tab)) %>%
-  rename(pred_tab = Var1)
-
 ```
 
-
-#### confusion matrix plotted 
-```{r}
-Bear_best %>%
-  mutate(diagnosis = ifelse(diagnosis == 0, "control", "schizophrenic"),
-         pred_best = ifelse(pred_best == 0, "control", "schizophrenic")) %>%
-  ggplot(aes(diagnosis, pred_best_num, fill = factor(pred_tab))) +
-  geom_bar(stat = "identity") +
-  theme_bw() +
-  theme(panel.grid.major.x = element_blank()) +
-  labs(title = "Model performance", 
-       subtitle = "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)",
-       fill = "model prediction", 
-       y = "number of model predictions", 
-       x = "true diagnosis")
-```
-
-#### more plots
+### more plots
 ```{r}
 Bear_best %>%
   ggplot(aes(diagnosis, fill = factor(pred_best))) +
@@ -456,40 +458,34 @@ Bear_best %>%
 ```
 
 
-## BRUTE FORCE
-BAD SECTION, PLESE NO
-```{r phack brute}
-fix_bear <- names(Bear_scaled)[6:13] %>%
-  paste(collapse=" + ") %>%
-  paste0("diagnosis ~ ", .)
+--------------------------------------------
+
+## DIY BRUTE FORCE 
+all combinations
+single random effect: (1|study)
+-based on something in task one when we played around with different RE
+-based on black box who said this is for the best
+```{r}
+X = c("mean", "sd", "range", "iqr", "median", "mean_abs", "coef_var", "se", "Gender")
+
+out <- unlist(lapply(1:9, function(n) {
+  # get combinations
+  combinations <- t(combn(X,n))
+  # collapse them into usable formulas:
+  formulas <- apply(combinations, 1, 
+                    function(row) paste0("diagnosis ~ ", 
+                                         paste0(row, collapse = " + "),
+                                         paste(" + (1|study)")))}))
 ```
 
-```{r phack manual and lame}
-g1 <- "diagnosis ~ median + Gender + (1|ID) + (1|study)"
-g2 <- "diagnosis ~ median + Gender + (median|ID) + (1|study)"
-g3 <- "diagnosis ~ median + Gender + (1|ID) + (median|study)"
-g4 <- "diagnosis ~ median + Gender + (median|ID) + (median|study)"
 
-g5 <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1|ID) + (1|study)"
-g6 <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (mean|ID) + (1|study)"
-g7 <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1|ID) + (mean|study)"
-g8 <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (mean|ID) + (median|study)"
-g9 <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (mean|study)"
-
-
-
-
-
-
-gmodel <- list(g1, g2, g3, g4)
-gmodel2 <- list(g5, g6, g7, g8, g9)
-```
-
+### the loop
+crossvalidates 511 models
 ```{r}
 set.seed(1337)
-g_table <- map_df(
+cross_table <- map_df(
             #list to loop trough
-            gmodel2,
+            out,
             #function to use
             crossvalidation_nation,
             # arguments
@@ -498,13 +494,111 @@ g_table <- map_df(
             dependent = "diagnosis", 
             pos = "1", 
             neg = "0")
-
-mean_g2 <- g_table %>%
-  select(-AUC) %>%
-  rowwise() %>%
-  mutate(mean_per = mean(c(SEN, SPE, PPV, NPV)),
-         sd_per = sd(c(SEN, SPE, PPV, NPV)))
 ```
+
+mean_par
+```{r}
+mean_par <- cross_table %>%
+  rowwise() %>%
+  mutate(pos_mean = mean(c(SEN, PPV)),
+         pos_sd = sd(c(SEN, PPV)),
+         neg_mean = mean(c(SPE, NPV)),
+         neg_sd = sd(c(SPE, NPV)),
+         all_mean = mean(c(SEN, SPE, PPV, NPV)),
+         all_sd = sd(c(SEN, SPE, PPV, NPV)))
+```
+
+
+
+### visualizing confusion matrix
+nice function
+```{r}
+confusion_plot <- function(model_name) {
+  
+  # TRAINING
+  model <- glmer(model_name, Bear_scaled, family = "binomial")
+  
+  # OUTPUT
+  mod_df <- Bear_scaled %>%
+    ungroup() %>%
+    mutate(pred_best_num = inv.logit(predict(model, Bear_scaled, 
+                                             allow.new.levels=TRUE)),
+           pred_best = ifelse(pred_best_num < 0.5, 0, 1),
+           pred_tab = case_when(pred_best == 0 & diagnosis == 0 ~ "true negative",
+                                pred_best == 0 & diagnosis == 1 ~ "false negative",
+                                pred_best == 1 & diagnosis == 0 ~ "false positive",
+                                pred_best == 1 & diagnosis == 1 ~ "true positive"))
+  
+  # PLOT
+  plot <- mod_df %>%
+    mutate(diagnosis = ifelse(diagnosis == 0, "control", "schizophrenic"),
+           pred_best = ifelse(pred_best == 0, "control", "schizophrenic")) %>%
+    ggplot(aes(pred_best, pred_best_num, fill = factor(pred_tab, 
+                                                      levels = c("false negative",
+                                                                 "true negative",
+                                                                 "false positive",
+                                                                 "true positive")))) +
+    geom_bar(stat = "identity") +
+    theme_bw() +
+    theme(panel.grid.major.x = element_blank()) +
+    labs(title = "Model performance", 
+         subtitle = model_name,
+         fill = "truth value", 
+         y = "number of model predictions", 
+         x = "model prediction")
+  
+  return(plot)
+}
+
+```
+
+
+#### a few interesting plots
+using confusion_plot
+```{r}
+# most sensitive model
+pl_SEN <- confusion_plot("diagnosis ~ coef_var + (1|study)")
+pl_SEN
+
+# most specific model
+pl_SPE <- confusion_plot("diagnosis ~ mean + range + iqr + (1|study)")
+pl_SPE
+
+# highest PPV
+pl_PPV <- confusion_plot("diagnosis ~ mean + sd + range + mean_abs + se + Gender + (1|study)")
+pl_PPV
+
+# highest NPV
+pl_NPV <- confusion_plot("diagnosis ~ mean + median + mean_abs + coef_var + (1|study)")
+pl_NPV
+
+# highest accuracy
+pl_ACC <- confusion_plot("diagnosis ~ median + se + (1|study)")
+pl_ACC
+
+
+### SUMMARIZED
+
+# highest avg pos SAME AS SEN
+pl_pos <- confusion_plot("diagnosis ~ coef_var + (1|study)")
+pl_pos
+
+# highest avg neg
+pl_neg <- confusion_plot("diagnosis ~ range + iqr + median + se + (1|study)")
+pl_neg
+
+# highest mean(all metrics) SAME AS PPV
+pl_all <- confusion_plot("diagnosis ~ mean + sd + range + mean_abs + se + Gender + (1|study)")
+pl_all 
+
+
+### BUILDMER MEST
+pl_mer <- confusion_plot("diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)")
+pl_mer
+```
+
+
+
 
 
 ### Question 4: Properly report the results
