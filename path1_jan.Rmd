@@ -26,6 +26,7 @@ p_load(tidyverse,
        boot, #inv.logit()
        groupdata2, #fold()
        reshape2,
+       ggrepel, # plotting text
        buildmer, #black-box
        MuMIn)  #dredge()
 
@@ -472,10 +473,12 @@ mean_single <- cross_single_all %>%
 rm(cross_single_norand, cross_single)
 ```
 
+
 best predictor
 ```{r}
 
 ```
+
 
 all single models plot
 ```{r}
@@ -509,11 +512,12 @@ mean_single_error %>%
   ggplot(aes(metric, value, color = random_intercepts)) +
   geom_jitter(width = 0.2) +
   theme_bw() +
-  labs(title = "Performance of single predictor models")
+  labs(title = "Performance of single predictor models", subtitle = "grouped by random intercept used")
   #geom_pointrange(aes(ymin = value - error, ymax = value + error), position = "jitter")
 ```
 
-plot 2
+
+cool plot comparing sensitivity and specificity of models across predictors
 ```{r}
 mean_single_error_pred <- mean_single_error %>%
   mutate(predictor = case_when(str_detect(model, "range") ~ "range",
@@ -524,12 +528,22 @@ mean_single_error_pred <- mean_single_error %>%
                                str_detect(model, "mean_abs") ~ "mean_abs",
                                str_detect(model, "coef_var") ~ "coef_var"))
 
+
 mean_single_error_pred %>%
   filter(random_intercepts == "study" | random_intercepts == "no random effects") %>%
-  ggplot(aes(metric, value, fill = predictor)) +
-  geom_bar(stat = "summary", position = "dodge")
+  filter(metric == "SEN" | metric == "SPE") %>%
+  ggplot(aes(x = fct_reorder(predictor, value, .fun = max), y = value)) +
+  geom_segment(aes(xend=predictor), yend=0, size = 1) +
+  geom_point(shape=18, aes(color = random_intercepts), size = 3) +
+  facet_wrap(~metric) +
+  theme_bw() +
+  labs(title = "Single predictor model performances", 
+       subtitle = "comparison of sensitivity and specificity across predictors",
+       color = "random effects?",
+       x = "diagnosis ~ X") +
+  theme(legend.position ="bottom",
+        panel.grid.major.x = element_blank())
 ```
-
 
 
 
