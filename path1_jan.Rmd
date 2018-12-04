@@ -148,12 +148,11 @@ rocCurve <- roc(response = Bear_scaled$diagnosis,
                 predictor = range_pred_num)
 r_auc <- pROC::auc(rocCurve)
 
-#ci(rocCurve)
-#plot(rocCurve, legacy.axes = TRUE)
+ci(rocCurve)
+plot(rocCurve, legacy.axes = TRUE)
 
-```
 
-```{r}
+## OUTPUT
 range_no <- (cbind.data.frame('model' = "non cross-validated",
            'SEN' = r_sen,
            'SPE' = r_spe,
@@ -161,8 +160,11 @@ range_no <- (cbind.data.frame('model' = "non cross-validated",
            'NPV' = r_npv,
            'AUC' = r_auc,
            'ACC' = r_acc))
-```
 
+rm(model_range, rocCurve, table_range)
+rm(range_pred, range_pred_num)
+rm(r_sen, r_spe, r_ppv, r_npv, r_auc, r_acc)
+```
 
 
 
@@ -302,10 +304,26 @@ range_comp <- range_yes %>%
 
   range_comp[,2:7] <- round(range_comp[,2:7], 3)
 
-  
-kable(range_comp)
+
+rm(range_no, range_yes)
 ```
 
+Range comparisson
+```{r}
+range_models <- mean_par %>%
+  filter(str_detect(model, "~ range")) %>%
+  filter(!str_detect(model, "Gender")) %>%
+  filter(!str_detect(model, "iqr")) %>%
+  filter(!str_detect(model, "mean")) %>%
+  filter(!str_detect(model, "median")) %>%
+  filter(!str_detect(model, "se")) %>%
+  filter(!str_detect(model, "coef_var")) %>%
+  arrange(desc(SEN))
+
+  range_models[,2:7] <- round(range_models[,2:7], 3)
+  
+kable(range_models[,1:7])
+```
 
 
 <OFFTOPIC>
@@ -353,43 +371,45 @@ id_uniq_perf <- map_df(
 
 ```{r model list}
 # creating model calls and putting them into list for later use
-m1 <- "diagnosis ~ range + Gender + (1|ID) + (1|study)"
-m2 <- "diagnosis ~ sd + Gender + (1|ID) + (1|study)"
-m3 <- "diagnosis ~ mean + Gender + (1|ID) + (1|study)"
-m4 <- "diagnosis ~ median + Gender + (1|ID) + (1|study)"
-m5 <- "diagnosis ~ iqr + Gender + (1|ID) + (1|study)"
-m6 <- "diagnosis ~ mean_abs + Gender + (1|ID) + (1|study)"
-m7 <- "diagnosis ~ coef_var + Gender + (1|ID) + (1|study)"
+c_gis1 <- "diagnosis ~ range + Gender + (1|ID) + (1|study)"
+c_gis2 <- "diagnosis ~ sd + Gender + (1|ID) + (1|study)"
+c_gis3 <- "diagnosis ~ mean + Gender + (1|ID) + (1|study)"
+c_gis4 <- "diagnosis ~ median + Gender + (1|ID) + (1|study)"
+c_gis5 <- "diagnosis ~ iqr + Gender + (1|ID) + (1|study)"
+c_gis6 <- "diagnosis ~ mean_abs + Gender + (1|ID) + (1|study)"
+c_gis7 <- "diagnosis ~ coef_var + Gender + (1|ID) + (1|study)"
 
-s1 <- "diagnosis ~ range + Gender +  (1|study)"
-s2 <- "diagnosis ~ sd + Gender +  (1|study)"
-s3 <- "diagnosis ~ mean + Gender +  (1|study)"
-s4 <- "diagnosis ~ median + Gender +  (1|study)"
-s5 <- "diagnosis ~ iqr + Gender +  (1|study)"
-s6 <- "diagnosis ~ mean_abs + Gender +  (1|study)"
-s7 <- "diagnosis ~ coef_var + Gender +  (1|study)"
+c_gs1 <- "diagnosis ~ range + Gender +  (1|study)"
+c_gs2 <- "diagnosis ~ sd + Gender +  (1|study)"
+c_gs3 <- "diagnosis ~ mean + Gender +  (1|study)"
+c_gs4 <- "diagnosis ~ median + Gender +  (1|study)"
+c_gs5 <- "diagnosis ~ iqr + Gender +  (1|study)"
+c_gs6 <- "diagnosis ~ mean_abs + Gender +  (1|study)"
+c_gs7 <- "diagnosis ~ coef_var + Gender +  (1|study)"
 
-n1 <- "diagnosis ~ range + (1|study)"
-n2 <- "diagnosis ~ sd + (1|study)"
-n3 <- "diagnosis ~ mean + (1|study)"
-n4 <- "diagnosis ~ median + (1|study)"
-n5 <- "diagnosis ~ iqr + (1|study)"
-n6 <- "diagnosis ~ mean_abs + (1|study)"
-n7 <- "diagnosis ~ coef_var + (1|study)"
+c_s1 <- "diagnosis ~ range + (1|study)"
+c_s2 <- "diagnosis ~ sd + (1|study)"
+c_s3 <- "diagnosis ~ mean + (1|study)"
+c_s4 <- "diagnosis ~ median + (1|study)"
+c_s5 <- "diagnosis ~ iqr + (1|study)"
+c_s6 <- "diagnosis ~ mean_abs + (1|study)"
+c_s7 <- "diagnosis ~ coef_var + (1|study)"
 
-j1 <- "diagnosis ~ range"
-j2 <- "diagnosis ~ sd"
-j3 <- "diagnosis ~ mean"
-j4 <- "diagnosis ~ median"
-j5 <- "diagnosis ~ iqr"
-j6 <- "diagnosis ~ mean_abs"
-j7 <- "diagnosis ~ coef_var"
+c_n1 <- "diagnosis ~ range"
+c_n2 <- "diagnosis ~ sd"
+c_n3 <- "diagnosis ~ mean"
+c_n4 <- "diagnosis ~ median"
+c_n5 <- "diagnosis ~ iqr"
+c_n6 <- "diagnosis ~ mean_abs"
+c_n7 <- "diagnosis ~ coef_var"
 
-model_list <- list(m1, m2, m3, m4, m5, m6, m7,
-                   s1, s2, s3, s4, s5, s6, s7,
-                   n1, n2, n3, n4, n5, n6, n7)
+model_list <- list(c_gis1, c_gis2, c_gis3, c_gis4, c_gis5, c_gis6, c_gis7,
+                   c_gs1, c_gs2, c_gs3, c_gs4, c_gs5, c_gs6, c_gs7,
+                   c_s1, c_s2, c_s3, c_s4, c_s5, c_s6, c_s7)
 
-no_random <- list(j1, j2, j3, j4, j5, j6, j7)
+no_random <- list(c_n1, c_n2, c_n3, c_n4, c_n5, c_n6, c_n7)
+
+rm(list=ls(pattern="c_"))
 ```
 
 
@@ -422,22 +442,25 @@ cross_single_norand <- map_df(
             neg = "0",
             random = FALSE)
 
-cross_single_all <- full_join(cross_single_norand, cross_single)
-
+rm(model_list, no_random)
 ```
 
 
 ### best predictor
 Median seems to be the best predictor. It scores the highest on every performance meassure except for accuracy.
 ```{r}
+cross_single_all <- full_join(cross_single_norand, cross_single)
+
 mean_single <- cross_single_all %>%
   rowwise() %>%
   mutate(pos_mean = mean(c(SEN, PPV)),
-         pos_sd = sd(c(SEN, PPV)),
+         pos_error = mean(c(SEN_SE, PPV_SE)),
          neg_mean = mean(c(SPE, NPV)),
-         neg_sd = sd(c(SPE, NPV)),
+         neg_error = mean(c(SPE_SE, NPV_SE)),
          all_mean = mean(c(SEN, SPE, PPV, NPV)),
-         all_sd = sd(c(SEN, SPE, PPV, NPV)))
+         all_error = mean(c(SEN_SE, SPE_SE, PPV_SE, NPV_SE)))
+
+rm(cross_single_norand, cross_single)
 ```
 
 
@@ -448,123 +471,11 @@ mean_single <- cross_single_all %>%
 
 ### Question 3 - Which combination of acoustic predictors is best for diagnosing schizophrenia?
 this section contains:
-- intuition approach (try to guess which model would be nice)
-- black box approach (automated model selection)
 - brute force approach (running all combinations of fixed effects trough c-v)
 
 
-
-## intuition approach
-Models were build based on performance of individual predictors:
-median > mean
-iqr > range
-
-However, both models perform very similarly and that is: not good enough. 
-```{r}
-## models
-
-# model based on momentarily intuitions
-intuition <- glmer(diagnosis ~ median + iqr + coef_var + Gender +
-                     (1|ID) + (1|study), Bear_scaled, family = "binomial")
-
-# model based on what we though would fuck up
-bad <- glmer(diagnosis ~ mean + range + coef_var + Gender + 
-                     (1|ID) + (1|study), Bear_scaled, family = "binomial")
-
-
-
-## cross-validation
-
-intuition_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model_name = "diagnosis ~ median + iqr + coef_var + Gender +
-                     (1|ID) + (1|study)", 
-                       dependent = "diagnosis", pos = "1", neg = "0")
-
-bad_cross = crossvalidation_nation(data = Bear_scaled, k = 5, 
-                       model_name = "diagnosis ~ mean + range + coef_var + Gender + 
-                     (1|ID) + (1|study)", 
-                       dependent = "diagnosis", pos = "1", neg = "0")
-
-```
-
-
---------------------------------------------
-
-## BLACK BOX APPROACH
-Using automated model selection to generate the best formula (based on AIC)
--order, backward
-```{r}
-a1 <- buildmer(diagnosis ~ mean + sd + range + iqr + 
-                median + mean_abs + coef_var + se + 
-                Gender + (1|ID) + (1|study) + 
-                (mean|ID) + (mean|study) +
-                (sd|ID) + (sd|study) +
-                (iqr|ID) + (iqr|study) +
-                (median|ID) + (median|study) +
-                (mean_abs|ID) + (mean_abs|study) +
-                (coef_var|ID) + (coef_var|study) +
-                (se|ID) + (se|study), 
-              Bear_scaled, family = "binomial")
-
-# takes a few years to run
-# a2 <- buildmer(diagnosis ~ mean * sd * range * iqr * 
-#                 median * mean_abs * coef_var * se * 
-#                 Gender + (1|ID) + (1|study) + 
-#                 (mean|ID) + (mean|study) +
-#                 (sd|ID) + (sd|study) +
-#                 (iqr|ID) + (iqr|study) +
-#                 (median|ID) + (median|study) +
-#                 (mean_abs|ID) + (mean_abs|study) +
-#                 (coef_var|ID) + (coef_var|study) +
-#                 (se|ID) + (se|study), 
-#               Bear_scaled, family = "binomial")
-
-
-buildmer_best <- "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)"
-
-best_model <- glmer(diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study),
-                    Bear_scaled, family = "binomial")
-
-best <- crossvalidation_nation(data = Bear_scaled, k = 5, 
-                               model_name = buildmer_best, 
-                               dependent = "diagnosis", pos = "1", neg = "0")
-```
-
-
-### categorizing preditions
-```{r}
-Bear_best <- Bear_scaled %>%
-  ungroup() %>%
-  mutate(pred_best_num = inv.logit(predict(best_model, Bear_scaled, 
-                               allow.new.levels=TRUE)),
-         pred_best = ifelse(pred_best_num < 0.5, 0, 1),
-         pred_tab = case_when(pred_best == 0 & diagnosis == 0 ~ "true negative",
-                              pred_best == 0 & diagnosis == 1 ~ "false negative",
-                              pred_best == 1 & diagnosis == 0 ~ "false positive",
-                              pred_best == 1 & diagnosis == 1 ~ "true positive"))
-
-```
-
-### more plots
-```{r}
-Bear_best %>%
-  ggplot(aes(diagnosis, fill = factor(pred_best))) +
-  geom_bar(position = "fill") +
-  theme_bw() +
-  labs(title = "Model performance", 
-       subtitle = "diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study)",
-       fill = "model prediction", 
-       x = "true diagnosis")
-```
-
-
---------------------------------------------
-
 ## DIY BRUTE FORCE 
 all combinations
-single random effect: (1|study)
--based on something in task one when we played around with different RE
--based on black box who said this is for the best
 ```{r}
 X = c("mean", "sd", "range", "iqr", "median", "mean_abs", "coef_var", "se", "Gender")
 
@@ -576,14 +487,32 @@ out <- unlist(lapply(1:9, function(n) {
                     function(row) paste0("diagnosis ~ ", 
                                          paste0(row, collapse = " + "),
                                          paste(" + (1|study)")))}))
+
+out_lrg <- unlist(lapply(1:9, function(n) {
+  # get combinations
+  combinations <- t(combn(X,n))
+  # collapse them into usable formulas:
+  formulas <- apply(combinations, 1, 
+                    function(row) paste0("diagnosis ~ ", 
+                                         paste0(row, collapse = " + "),
+                                         paste(" + (1|ID) + (1|study)")))}))
+
+out_norand <- unlist(lapply(1:9, function(n) {
+  # get combinations
+  combinations <- t(combn(X,n))
+  # collapse them into usable formulas:
+  formulas <- apply(combinations, 1, 
+                    function(row) paste0("diagnosis ~ ", 
+                                         paste0(row, collapse = " + ")))}))
 ```
 
 
 ### the loop
-crossvalidates 511 models
+crossvalidates 511 models with (1|study)
+output is in the folder
 ```{r}
 set.seed(1337)
-cross_table <- map_df(
+cross_out <- map_df(
             #list to loop trough
             out,
             #function to use
@@ -596,16 +525,66 @@ cross_table <- map_df(
             neg = "0")
 ```
 
-mean_par
+crossvalidates 511 models with (1|ID) + (1|study)
+output is in the folder
 ```{r}
+set.seed(1337)
+cross_out_lrg <- map_df(
+            #list to loop trough
+            out_lrg,
+            #function to use
+            crossvalidation_nation,
+            # arguments
+            data = Bear_scaled, 
+            k = 5,
+            dependent = "diagnosis", 
+            pos = "1", 
+            neg = "0")
+```
+
+crossvalidates 511 models without random effects
+output is in the folder
+```{r}
+set.seed(1337)
+cross_out_norand <- map_df(
+            #list to loop trough
+            out_norand,
+            #function to use
+            crossvalidation_nation,
+            # arguments
+            data = Bear_scaled, 
+            k = 5,
+            dependent = "diagnosis", 
+            pos = "1", 
+            neg = "0",
+            random = FALSE)
+```
+
+
+in case that was run externally
+```{r}
+cross_out <- read_csv("cross_out.csv")
+cross_out_lrg <- read_csv("cross_out_lrg.csv")
+cross_out_norand <- read_csv("cross_out_norand.csv")
+```
+
+
+### COMPARISON
+
+```{r}
+cross_table <- full_join(cross_out, cross_out_lrg) %>%
+  full_join(cross_out_norand)
+
 mean_par <- cross_table %>%
   rowwise() %>%
   mutate(pos_mean = mean(c(SEN, PPV)),
-         pos_sd = sd(c(SEN, PPV)),
+         pos_error = mean(c(SEN_SE, PPV_SE)),
          neg_mean = mean(c(SPE, NPV)),
-         neg_sd = sd(c(SPE, NPV)),
+         neg_error = mean(c(SPE_SE, NPV_SE)),
          all_mean = mean(c(SEN, SPE, PPV, NPV)),
-         all_sd = sd(c(SEN, SPE, PPV, NPV)))
+         all_error = mean(c(SEN_SE, SPE_SE, PPV_SE, NPV_SE)))
+
+rm(cross_out, cross_out_lrg, cross_out_norand)
 ```
 
 
@@ -613,10 +592,19 @@ mean_par <- cross_table %>%
 ### visualizing confusion matrix
 nice function
 ```{r}
-confusion_plot <- function(model_name) {
+confusion_plot <- function(model_name, random = TRUE) {
   
   # TRAINING
-  model <- glmer(model_name, Bear_scaled, family = "binomial")
+  if (isTRUE(random)){
+
+      model <- glmer(model_name, Bear_scaled, family = "binomial")
+
+    } else {
+      
+      model <- glm(model_name, Bear_scaled, family = "binomial")
+
+    }
+
   
   # OUTPUT
   mod_df <- Bear_scaled %>%
@@ -629,15 +617,15 @@ confusion_plot <- function(model_name) {
                                 pred_best == 1 & diagnosis == 0 ~ "false positive",
                                 pred_best == 1 & diagnosis == 1 ~ "true positive"))
   
+  mod_summary <- mod_df %>%
+    group_by(pred_best) %>%
+    summary(n = n())
+  
   # PLOT
   plot <- mod_df %>%
     mutate(diagnosis = ifelse(diagnosis == 0, "control", "schizophrenic"),
            pred_best = ifelse(pred_best == 0, "control", "schizophrenic")) %>%
-    ggplot(aes(pred_best, pred_best_num, fill = factor(pred_tab, 
-                                                      levels = c("false negative",
-                                                                 "true negative",
-                                                                 "false positive",
-                                                                 "true positive")))) +
+    ggplot(aes(pred_best, pred_best_num, fill = factor(pred_tab))) +
     geom_bar(stat = "identity") +
     theme_bw() +
     theme(panel.grid.major.x = element_blank()) +
