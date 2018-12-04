@@ -379,6 +379,14 @@ c_gis5 <- "diagnosis ~ iqr + Gender + (1|ID) + (1|study)"
 c_gis6 <- "diagnosis ~ mean_abs + Gender + (1|ID) + (1|study)"
 c_gis7 <- "diagnosis ~ coef_var + Gender + (1|ID) + (1|study)"
 
+c_i1 <- "diagnosis ~ range + (1|ID)"
+c_i2 <- "diagnosis ~ sd + (1|ID)"
+c_i3 <- "diagnosis ~ mean + (1|ID)"
+c_i4 <- "diagnosis ~ median + (1|ID)"
+c_i5 <- "diagnosis ~ iqr + (1|ID)"
+c_i6 <- "diagnosis ~ mean_abs + (1|ID)"
+c_i7 <- "diagnosis ~ coef_var + (1|ID)"
+
 c_gs1 <- "diagnosis ~ range + Gender +  (1|study)"
 c_gs2 <- "diagnosis ~ sd + Gender +  (1|study)"
 c_gs3 <- "diagnosis ~ mean + Gender +  (1|study)"
@@ -404,6 +412,7 @@ c_n6 <- "diagnosis ~ mean_abs"
 c_n7 <- "diagnosis ~ coef_var"
 
 model_list <- list(c_gis1, c_gis2, c_gis3, c_gis4, c_gis5, c_gis6, c_gis7,
+                   c_i1, c_i2, c_i3, c_i4, c_i4, c_i5, c_i6, c_i7,
                    c_gs1, c_gs2, c_gs3, c_gs4, c_gs5, c_gs6, c_gs7,
                    c_s1, c_s2, c_s3, c_s4, c_s5, c_s6, c_s7)
 
@@ -463,8 +472,63 @@ mean_single <- cross_single_all %>%
 rm(cross_single_norand, cross_single)
 ```
 
+best predictor
+```{r}
 
+```
 
+all single models plot
+```{r}
+mean_single_melt <- mean_single %>%
+  select(-contains("_SE")) %>%
+  select(-contains("mean")) %>%
+  select(-contains("error")) %>%
+  melt(id = "model") %>%
+  rename(metric = variable) %>%
+  mutate(random_intercepts = case_when(str_detect(model, "study") &
+                                         !str_detect(model, "ID") ~ "study",
+                                       
+                                       str_detect(model, "ID") &
+                                         !str_detect(model, "study") ~ "ID",
+                                       
+                                       str_detect(model, "ID") &
+                                         str_detect(model, "study") ~ "study & ID",
+                                       
+                                       TRUE ~ "no random effects"))
+
+mean_single_error <- mean_single %>%
+  select(contains("_SE"), model) %>%
+  melt(id = "model") %>%
+  rename(metric = variable, error = value) %>%
+  mutate(metric = str_remove_all(metric, "_SE")) %>%
+  full_join(mean_single_melt)
+
+set.seed(1337)
+mean_single_error %>%
+  filter(metric != "AUC") %>%
+  ggplot(aes(metric, value, color = random_intercepts)) +
+  geom_jitter(width = 0.2) +
+  theme_bw() +
+  labs(title = "Performance of single predictor models")
+  #geom_pointrange(aes(ymin = value - error, ymax = value + error), position = "jitter")
+```
+
+plot 2
+```{r}
+mean_single_error_pred <- mean_single_error %>%
+  mutate(predictor = case_when(str_detect(model, "range") ~ "range",
+                               str_detect(model, "sd") ~ "sd",
+                               str_detect(model, "mean") ~ "mean",
+                               str_detect(model, "median") ~ "median",
+                               str_detect(model, "iqr") ~ "iqr",
+                               str_detect(model, "mean_abs") ~ "mean_abs",
+                               str_detect(model, "coef_var") ~ "coef_var"))
+
+mean_single_error_pred %>%
+  filter(random_intercepts == "study" | random_intercepts == "no random effects") %>%
+  ggplot(aes(metric, value, fill = predictor)) +
+  geom_bar(stat = "summary", position = "dodge")
+```
 
 
 
