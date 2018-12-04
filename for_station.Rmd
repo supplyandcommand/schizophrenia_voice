@@ -269,3 +269,10 @@ some_interaction <- buildmer(diagnosis ~ mean * sd * range * iqr *
 
 saveRDS(some_interaction, "some_interaction.Rds")
 ```
+
+## best non-interaction model
+```{r}
+best_model <- glmer(diagnosis ~ se + mean + iqr + mean_abs + coef_var + Gender + (1 | study),
+                    Bear_scaled, family = "binomial")
+```
+
