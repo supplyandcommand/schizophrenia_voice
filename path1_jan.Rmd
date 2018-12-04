@@ -25,6 +25,7 @@ p_load(tidyverse,
        pROC, #ci()
        boot, #inv.logit()
        groupdata2, #fold()
+       reshape2,
        buildmer, #black-box
        MuMIn)  #dredge()
 
@@ -100,12 +101,11 @@ rm(i, maxc, minc)
 
 
 # Q1: range as predictor
-Training model.
-Following range model was the most reliable as shown by cross-validation
+Training model. Range only
+
 ```{r range model}
 ## range model
-model_range <- glmer(diagnosis ~ range + Gender + (1|ID) + (1|study), 
-                     Bear_scaled, family= "binomial")
+model_range <- glm(diagnosis ~ range, Bear_scaled, family= "binomial")
 
 
 ## PREDICT
@@ -122,12 +122,12 @@ range_pred[range_pred >= 0.5] = "1"
 tidyer output later on (id_uniq_perf)
 ```{r range performance}
 ## SENSITIVITY SPECIFICITY
-caret::sensitivity(factor(range_pred), factor(Bear_scaled$diagnosis), positive = "1")
-caret::specificity(factor(range_pred), factor(Bear_scaled$diagnosis), negative = "0")
+r_sen <- caret::sensitivity(factor(range_pred), factor(Bear_scaled$diagnosis), positive = "1")
+r_spe <- caret::specificity(factor(range_pred), factor(Bear_scaled$diagnosis), negative = "0")
 
 ## PPV / NPV
-PPV <- posPredValue(factor(range_pred), factor(Bear_scaled$diagnosis), positive = "1")
-NPV <- negPredValue(factor(range_pred), factor(Bear_scaled$diagnosis), negative = "0")
+r_ppv <- posPredValue(factor(range_pred), factor(Bear_scaled$diagnosis), positive = "1")
+r_npv <- negPredValue(factor(range_pred), factor(Bear_scaled$diagnosis), negative = "0")
 
 ## ACCURACY
 # table to asses
@@ -140,16 +140,27 @@ acc_fun <- function(table) {
 }
 
 # accuracy score
-acc_fun(table_range)
+r_acc <- acc_fun(table_range)
 
 
 #ROC curve 
 rocCurve <- roc(response = Bear_scaled$diagnosis, 
                 predictor = range_pred_num)
-pROC::auc(rocCurve)
-ci(rocCurve)
-plot(rocCurve, legacy.axes = TRUE)
+r_auc <- pROC::auc(rocCurve)
 
+#ci(rocCurve)
+#plot(rocCurve, legacy.axes = TRUE)
+
+```
+
+```{r}
+range_no <- (cbind.data.frame('model' = "non cross-validated",
+           'SEN' = r_sen,
+           'SPE' = r_spe,
+           'PPV' = r_ppv,
+           'NPV' = r_npv,
+           'AUC' = r_auc,
+           'ACC' = r_acc))
 ```
 
 
@@ -166,12 +177,13 @@ Bear_scaled <- fold(Bear_scaled, k = 5,
 
 ```
 
+
 -define funciton
 ```{r loop}
 # heavily inspired by Ludvig Renbo Olsen
 # https://cran.r-project.org/web/packages/groupdata2/vignettes/cross-validation_with_groupdata2.html
 
-crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
+crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, random = TRUE) {
   # Initialize empty list for recording performances
   performances_SEN <- c()
   performances_SPE <- c()
@@ -198,7 +210,17 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     # use lmer() to train model
     # else use lm()
     
-    model <- glmer(model_name, training_set, family = "binomial")
+     if (isTRUE(random)){
+
+      model <- glmer(model_name, training_set, family = "binomial")
+
+    } else {
+      
+      model <- glm(model_name, training_set, family = "binomial")
+
+    }
+
+    
 
 
     ## Test model
@@ -207,25 +229,25 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     predicted <- inv.logit(predict(model, testing_set, allow.new.levels=TRUE))
     
     # Make predicted into factors
-    predicted[predicted < 0.5] = "0"
-    predicted[predicted >= 0.5] = "1"
-    predicted <- factor(predicted)
+    predicted[predicted < 0.5] = 0
+    predicted[predicted >= 0.5] = 1
+    predicted_f <- factor(predicted)
     
     # Get model performance metrics between the predicted and the observed
-    SEN <- caret::sensitivity(predicted, testing_set[[dependent]], positive = pos)
+    SEN <- caret::sensitivity(predicted_f, testing_set[[dependent]], positive = pos)
     
-    SPE <- caret::specificity(predicted, testing_set[[dependent]], negative = neg)
+    SPE <- caret::specificity(predicted_f, testing_set[[dependent]], negative = neg)
     
-    PPV <- posPredValue(predicted, testing_set[[dependent]], positive = pos)
+    PPV <- posPredValue(predicted_f, testing_set[[dependent]], positive = pos)
     
-    NPV <- negPredValue(predicted, testing_set[[dependent]], negative = neg)
+    NPV <- negPredValue(predicted_f, testing_set[[dependent]], negative = neg)
     
-    predicted <- as.numeric(predicted)
     rocCurve <- roc(response = testing_set$diagnosis, predictor = predicted)
     AUC <- pROC::auc(rocCurve)
     
-    testing_set$predicted <- predicted
-    testing_correct <- filter(testing_set, diagnosis == predicted)
+    testing_set$predicted <- predicted_f
+    testing_correct <- filter(testing_set, diagnosis == as.character(predicted_f))
+    testing_set <- testing_set
     ACC <- nrow(testing_correct) / nrow(testing_set)
     
     # Add the to the performance list
@@ -237,6 +259,8 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     performances_ACC[fold] <- ACC
 
   }
+  
+  se <- function(x, na.rm = T) sqrt(var(x)/length(x))
 
   # Return the mean of the recorded RMSEs
   return(cbind.data.frame('model' = model_name,
@@ -245,13 +269,46 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
            'PPV' = mean(performances_PPV, na.rm = T),
            'NPV' = mean(performances_NPV, na.rm = T),
            'AUC' = mean(performances_AUC, na.rm = T),
-           'ACC' = mean(performances_ACC, na.rm = T)))
+           'ACC' = mean(performances_ACC, na.rm = T),
+           'SEN_SE' = se(performances_SEN, na.rm = T),
+           'SPE_SE' = se(performances_SPE, na.rm = T),
+           'PPV_SE' = se(performances_PPV, na.rm = T),
+           'NPV_SE' = se(performances_NPV, na.rm = T),
+           'AUC_SE' = se(performances_AUC, na.rm = T),
+           'ACC_SE' = se(performances_ACC, na.rm = T)))
 
 }
 ```
 
 
+## cross-validating the range only model
+```{r}
+range_yes <- crossvalidation_nation(Bear_scaled, 
+                       k = 5,
+                       model_name = "diagnosis ~ range",
+                       dependent = "diagnosis", 
+                       pos = "1", 
+                       neg = "0", 
+                       random = FALSE)
 
+range_yes$model <- as.character(range_yes$model)
+range_yes[1,1] <- "cross-validated"
+```
+
+Crossvalidation doesn't compromise the model!
+```{r}
+range_comp <- range_yes %>%
+  full_join(range_no) 
+
+  range_comp[,2:7] <- round(range_comp[,2:7], 3)
+
+  
+kable(range_comp)
+```
+
+
+
+<OFFTOPIC>
 ## ID vs uniqueness debate
 Reasoning behind diagnosis ~ range + Gender + (1|ID) + (1|study)
 
@@ -287,7 +344,7 @@ id_uniq_perf <- map_df(
             pos = "1", 
             neg = "0")
 ```
-
+</OFFTOPIC>
 
 
 
@@ -304,7 +361,35 @@ m5 <- "diagnosis ~ iqr + Gender + (1|ID) + (1|study)"
 m6 <- "diagnosis ~ mean_abs + Gender + (1|ID) + (1|study)"
 m7 <- "diagnosis ~ coef_var + Gender + (1|ID) + (1|study)"
 
-model_list <- list(m1, m2, m3, m4, m5, m6, m7)
+s1 <- "diagnosis ~ range + Gender +  (1|study)"
+s2 <- "diagnosis ~ sd + Gender +  (1|study)"
+s3 <- "diagnosis ~ mean + Gender +  (1|study)"
+s4 <- "diagnosis ~ median + Gender +  (1|study)"
+s5 <- "diagnosis ~ iqr + Gender +  (1|study)"
+s6 <- "diagnosis ~ mean_abs + Gender +  (1|study)"
+s7 <- "diagnosis ~ coef_var + Gender +  (1|study)"
+
+n1 <- "diagnosis ~ range + (1|study)"
+n2 <- "diagnosis ~ sd + (1|study)"
+n3 <- "diagnosis ~ mean + (1|study)"
+n4 <- "diagnosis ~ median + (1|study)"
+n5 <- "diagnosis ~ iqr + (1|study)"
+n6 <- "diagnosis ~ mean_abs + (1|study)"
+n7 <- "diagnosis ~ coef_var + (1|study)"
+
+j1 <- "diagnosis ~ range"
+j2 <- "diagnosis ~ sd"
+j3 <- "diagnosis ~ mean"
+j4 <- "diagnosis ~ median"
+j5 <- "diagnosis ~ iqr"
+j6 <- "diagnosis ~ mean_abs"
+j7 <- "diagnosis ~ coef_var"
+
+model_list <- list(m1, m2, m3, m4, m5, m6, m7,
+                   s1, s2, s3, s4, s5, s6, s7,
+                   n1, n2, n3, n4, n5, n6, n7)
+
+no_random <- list(j1, j2, j3, j4, j5, j6, j7)
 ```
 
 
@@ -324,13 +409,28 @@ cross_single <- map_df(
             pos = "1", 
             neg = "0")
 
+cross_single_norand <- map_df(
+  #list to loop trough
+            no_random,
+            #function to use
+            crossvalidation_nation,
+            # arguments
+            data = Bear_scaled, 
+            k = 5,
+            dependent = "diagnosis", 
+            pos = "1", 
+            neg = "0",
+            random = FALSE)
+
+cross_single_all <- full_join(cross_single_norand, cross_single)
+
 ```
 
 
 ### best predictor
 Median seems to be the best predictor. It scores the highest on every performance meassure except for accuracy.
 ```{r}
-mean_single <- cross_single %>%
+mean_single <- cross_single_all %>%
   rowwise() %>%
   mutate(pos_mean = mean(c(SEN, PPV)),
          pos_sd = sd(c(SEN, PPV)),

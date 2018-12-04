@@ -46,7 +46,7 @@ Bear_scaled <- read_csv("Bear_scaled_fold.csv") %>%
 # LIMITED CRAZINESS 
 ## CV function
 ```{r}
-crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
+crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, random = TRUE) {
   # Initialize empty list for recording performances
   performances_SEN <- c()
   performances_SPE <- c()
@@ -73,7 +73,17 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     # use lmer() to train model
     # else use lm()
     
-    model <- glmer(model_name, training_set, family = "binomial")
+     if (isTRUE(random)){
+
+      model <- glmer(model_name, training_set, family = "binomial")
+
+    } else {
+      
+      model <- glm(model_name, training_set, family = "binomial")
+
+    }
+
+    
 
 
     ## Test model
@@ -82,25 +92,25 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     predicted <- inv.logit(predict(model, testing_set, allow.new.levels=TRUE))
     
     # Make predicted into factors
-    predicted[predicted < 0.5] = "0"
-    predicted[predicted >= 0.5] = "1"
-    predicted <- factor(predicted)
+    predicted[predicted < 0.5] = 0
+    predicted[predicted >= 0.5] = 1
+    predicted_f <- factor(predicted)
     
     # Get model performance metrics between the predicted and the observed
-    SEN <- caret::sensitivity(predicted, testing_set[[dependent]], positive = pos)
+    SEN <- caret::sensitivity(predicted_f, testing_set[[dependent]], positive = pos)
     
-    SPE <- caret::specificity(predicted, testing_set[[dependent]], negative = neg)
+    SPE <- caret::specificity(predicted_f, testing_set[[dependent]], negative = neg)
     
-    PPV <- posPredValue(predicted, testing_set[[dependent]], positive = pos)
+    PPV <- posPredValue(predicted_f, testing_set[[dependent]], positive = pos)
     
-    NPV <- negPredValue(predicted, testing_set[[dependent]], negative = neg)
+    NPV <- negPredValue(predicted_f, testing_set[[dependent]], negative = neg)
     
-    predicted <- as.numeric(predicted)
     rocCurve <- roc(response = testing_set$diagnosis, predictor = predicted)
     AUC <- pROC::auc(rocCurve)
     
-    testing_set$predicted <- predicted
-    testing_correct <- filter(testing_set, diagnosis == predicted)
+    testing_set$predicted <- predicted_f
+    testing_correct <- filter(testing_set, diagnosis == as.character(predicted_f))
+    testing_set <- testing_set
     ACC <- nrow(testing_correct) / nrow(testing_set)
     
     # Add the to the performance list
@@ -112,6 +122,8 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
     performances_ACC[fold] <- ACC
 
   }
+  
+  se <- function(x, na.rm = T) sqrt(var(x)/length(x))
 
   # Return the mean of the recorded RMSEs
   return(cbind.data.frame('model' = model_name,
@@ -120,7 +132,13 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg) {
            'PPV' = mean(performances_PPV, na.rm = T),
            'NPV' = mean(performances_NPV, na.rm = T),
            'AUC' = mean(performances_AUC, na.rm = T),
-           'ACC' = mean(performances_ACC, na.rm = T)))
+           'ACC' = mean(performances_ACC, na.rm = T),
+           'SEN_SE' = se(performances_SEN, na.rm = T),
+           'SPE_SE' = se(performances_SPE, na.rm = T),
+           'PPV_SE' = se(performances_PPV, na.rm = T),
+           'NPV_SE' = se(performances_NPV, na.rm = T),
+           'AUC_SE' = se(performances_AUC, na.rm = T),
+           'ACC_SE' = se(performances_ACC, na.rm = T)))
 
 }
 ```
@@ -139,13 +157,30 @@ out <- unlist(lapply(1:9, function(n) {
                                          paste0(row, collapse = " + "),
                                          paste(" + (1|study)")))}))
 
+out_lrg <- unlist(lapply(1:9, function(n) {
+  # get combinations
+  combinations <- t(combn(X,n))
+  # collapse them into usable formulas:
+  formulas <- apply(combinations, 1, 
+                    function(row) paste0("diagnosis ~ ", 
+                                         paste0(row, collapse = " + "),
+                                         paste(" + (1|ID) + (1|study)")))}))
+
+out_norand <- unlist(lapply(1:9, function(n) {
+  # get combinations
+  combinations <- t(combn(X,n))
+  # collapse them into usable formulas:
+  formulas <- apply(combinations, 1, 
+                    function(row) paste0("diagnosis ~ ", 
+                                         paste0(row, collapse = " + ")))}))
+
 ```
 
 
 ## CV run
 ```{r}
 set.seed(1337)
-cross_table <- map_df(
+cross_out <- map_df(
             #list to loop trough
             out,
             #function to use
@@ -157,8 +192,44 @@ cross_table <- map_df(
             pos = "1", 
             neg = "0")
 
-write_csv(cross_table, "cross_table.csv")
+write_csv(cross_out, "cross_out.csv")
 ```
+
+```{r}
+set.seed(1337)
+cross_out_lrg <- map_df(
+            #list to loop trough
+            out_lrg,
+            #function to use
+            crossvalidation_nation,
+            # arguments
+            data = Bear_scaled, 
+            k = 5,
+            dependent = "diagnosis", 
+            pos = "1", 
+            neg = "0")
+
+write_csv(cross_out_lrg, "cross_out_lrg.csv")
+```
+
+```{r}
+set.seed(1337)
+cross_out_norand <- map_df(
+            #list to loop trough
+            out_norand,
+            #function to use
+            crossvalidation_nation,
+            # arguments
+            data = Bear_scaled, 
+            k = 5,
+            dependent = "diagnosis", 
+            pos = "1", 
+            neg = "0",
+            random = FALSE)
+
+write_csv(cross_out_norand, "cross_out_norand.csv")
+```
+
 
 ## CV compare
 ```{r}
