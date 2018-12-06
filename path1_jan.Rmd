@@ -573,6 +573,7 @@ mean_single_error_pred %>%
   geom_segment(aes(xend=predictor), yend=0, size = 1) +
   geom_point(shape=18, aes(color = random_intercepts), size = 3) +
   facet_wrap(~metric) +
+  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1)) +
   theme_bw() +
   labs(title = "Single predictor model performances", 
        subtitle = "comparison of sensitivity and specificity across predictors",
@@ -582,7 +583,29 @@ mean_single_error_pred %>%
         panel.grid.major.x = element_blank())
 ```
 
-Plot SEN + SPE
+cool plot PPV, NPV
+```{r}
+mean_single_error_pred %>%
+  filter(random_intercepts == "study" | 
+           random_intercepts == "study (+ Gender as fix)" |
+           random_intercepts == "no random effects") %>%
+  filter(metric == "PPV" | metric == "NPV") %>%
+  ggplot(aes(x = fct_reorder(predictor, value, .fun = max), y = value)) +
+  geom_segment(aes(xend=predictor), yend=0, size = 1) +
+  geom_point(shape=18, aes(color = random_intercepts), size = 3) +
+  facet_wrap(~metric) +
+  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1)) +
+  theme_bw() +
+  labs(title = "Single predictor model performances", 
+       subtitle = "comparison of PPV and NPV across predictors",
+       color = "random effects?",
+       x = "diagnosis ~ X") +
+  theme(legend.position ="bottom",
+        panel.grid.major.x = element_blank())
+```
+
+
+SOME SHITTY PLOT
 ```{r}
 mean_single_error_pred %>%
   filter(random_intercepts == "study" | 
@@ -590,12 +613,12 @@ mean_single_error_pred %>%
            random_intercepts == "no random effects") %>%
   #filter(metric == "SEN" | metric == "SPE") %>%
   ggplot(aes(x = fct_reorder(predictor, value, .fun = max), y = value)) +
-  geom_segment(stat = "summary", aes(xend=predictor), yend=0, size = 1) +
+  #geom_segment(stat = "summary", aes(xend=predictor), yend=0, size = 1) +
   geom_point(stat = "summary", shape=18, aes(color = random_intercepts), size = 3) +
   #facet_wrap(~metric) +
   theme_bw() +
   labs(title = "Single predictor model performances", 
-       subtitle = "comparison of sensitivity and specificity across predictors",
+       subtitle = "comparison of average score across predictors",
        color = "random effects?",
        x = "diagnosis ~ X") +
   theme(legend.position ="bottom",
@@ -720,6 +743,85 @@ mean_par <- cross_table %>%
          all_error = mean(c(SEN_SE, SPE_SE, PPV_SE, NPV_SE)))
 
 rm(cross_out, cross_out_lrg, cross_out_norand)
+```
+
+
+### top models alongside
+##### MELTING
+```{r}
+mean_par_melt <- mean_par %>%
+  select(-contains("_SE")) %>%
+  select(-contains("mean")) %>%
+  select(-contains("error")) %>%
+  melt(id = "model") %>%
+  rename(metric = variable) %>%
+  mutate(random_intercepts = case_when(str_detect(model, "study") &
+                                         !str_detect(model, "ID") &
+                                         !str_detect(model, "Gender") ~ "study",
+                                       
+                                       str_detect(model, "study") &
+                                         !str_detect(model, "ID") &
+                                         str_detect(model, "Gender") ~ "study (+ Gender as fix)",
+                                       
+                                       str_detect(model, "ID") &
+                                         !str_detect(model, "study") &
+                                         !str_detect(model, "Gender") ~ "ID",
+                                       
+                                       str_detect(model, "ID") &
+                                         !str_detect(model, "study") &
+                                         str_detect(model, "Gender") ~ "ID (+ Gender as fix)",
+                                       
+                                       str_detect(model, "ID") &
+                                         str_detect(model, "study") &
+                                         !str_detect(model, "Gender") ~ "study & ID",
+                                       
+                                       str_detect(model, "ID") &
+                                         str_detect(model, "study") &
+                                         str_detect(model, "Gender") ~ "study & ID (+ Gender as fix)",
+                                       
+                                       !str_detect(model, "ID") &
+                                         !str_detect(model, "study") &
+                                         str_detect(model, "Gender") ~ "no RE (+ Gender as fix)",
+                                       
+                                       TRUE ~ "no random effects"))
+
+mean_par_error <- mean_par %>%
+  select(contains("_SE"), model) %>%
+  melt(id = "model") %>%
+  rename(metric = variable, error = value) %>%
+  mutate(metric = str_remove_all(metric, "_SE")) %>%
+  full_join(mean_par_melt)
+```
+
+#### PLOTTING
+```{r}
+mean_par_error_pred <- mean_par_error %>%
+  mutate(predictor = case_when(str_detect(model, "range") ~ "range",
+                               str_detect(model, "sd") ~ "sd",
+                               str_detect(model, "mean") ~ "mean",
+                               str_detect(model, "median") ~ "median",
+                               str_detect(model, "iqr") ~ "iqr",
+                               str_detect(model, "mean_abs") ~ "mean_abs",
+                               str_detect(model, "coef_var") ~ "coef_var"))
+
+# PLOT SEN + SPE
+mean_single_error_pred %>%
+  filter(random_intercepts == "study" | 
+           random_intercepts == "study (+ Gender as fix)" |
+           random_intercepts == "no random effects") %>%
+  filter(metric == "SEN" | metric == "SPE") %>%
+  ggplot(aes(x = fct_reorder(predictor, value, .fun = max), y = value)) +
+  geom_segment(aes(xend=predictor), yend=0, size = 1) +
+  geom_point(shape=18, aes(color = random_intercepts), size = 3) +
+  facet_wrap(~metric) +
+  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1)) +
+  theme_bw() +
+  labs(title = "Single predictor model performances", 
+       subtitle = "comparison of sensitivity and specificity across predictors",
+       color = "random effects?",
+       x = "diagnosis ~ X") +
+  theme(legend.position ="bottom",
+        panel.grid.major.x = element_blank())
 ```
 
 
