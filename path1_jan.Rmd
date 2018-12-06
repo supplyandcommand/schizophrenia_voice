@@ -309,7 +309,8 @@ range_comp <- range_yes %>%
 rm(range_no, range_yes)
 ```
 
-Range comparisson
+Range comparisson - just for output
+Depends on later code!
 ```{r}
 range_models <- mean_par %>%
   filter(str_detect(model, "~ range")) %>%
@@ -388,6 +389,14 @@ c_i5 <- "diagnosis ~ iqr + (1|ID)"
 c_i6 <- "diagnosis ~ mean_abs + (1|ID)"
 c_i7 <- "diagnosis ~ coef_var + (1|ID)"
 
+c_ig1 <- "diagnosis ~ range + Gender + (1|ID)"
+c_ig2 <- "diagnosis ~ sd + Gender + (1|ID)"
+c_ig3 <- "diagnosis ~ mean + Gender + (1|ID)"
+c_ig4 <- "diagnosis ~ median + Gender + (1|ID)"
+c_ig5 <- "diagnosis ~ iqr + Gender + (1|ID)"
+c_ig6 <- "diagnosis ~ mean_abs + Gender + (1|ID)"
+c_ig7 <- "diagnosis ~ coef_var + Gender + (1|ID)"
+
 c_gs1 <- "diagnosis ~ range + Gender +  (1|study)"
 c_gs2 <- "diagnosis ~ sd + Gender +  (1|study)"
 c_gs3 <- "diagnosis ~ mean + Gender +  (1|study)"
@@ -412,12 +421,22 @@ c_n5 <- "diagnosis ~ iqr"
 c_n6 <- "diagnosis ~ mean_abs"
 c_n7 <- "diagnosis ~ coef_var"
 
+c_ng1 <- "diagnosis ~ range + Gender"
+c_ng2 <- "diagnosis ~ sd + Gender"
+c_ng3 <- "diagnosis ~ mean + Gender"
+c_ng4 <- "diagnosis ~ median + Gender"
+c_ng5 <- "diagnosis ~ iqr + Gender"
+c_ng6 <- "diagnosis ~ mean_abs + Gender"
+c_ng7 <- "diagnosis ~ coef_var + Gender"
+
 model_list <- list(c_gis1, c_gis2, c_gis3, c_gis4, c_gis5, c_gis6, c_gis7,
                    c_i1, c_i2, c_i3, c_i4, c_i4, c_i5, c_i6, c_i7,
                    c_gs1, c_gs2, c_gs3, c_gs4, c_gs5, c_gs6, c_gs7,
-                   c_s1, c_s2, c_s3, c_s4, c_s5, c_s6, c_s7)
+                   c_s1, c_s2, c_s3, c_s4, c_s5, c_s6, c_s7,
+                   c_ig1, c_ig2, c_ig3, c_ig4, c_ig5, c_ig6, c_ig7)
 
-no_random <- list(c_n1, c_n2, c_n3, c_n4, c_n5, c_n6, c_n7)
+no_random <- list(c_n1, c_n2, c_n3, c_n4, c_n5, c_n6, c_n7,
+                  c_ng1, c_ng2, c_ng3, c_ng4, c_ng5, c_ng6, c_ng7)
 
 rm(list=ls(pattern="c_"))
 ```
@@ -456,7 +475,7 @@ rm(model_list, no_random)
 ```
 
 
-### best predictor
+### best single predictor
 Median seems to be the best predictor. It scores the highest on every performance meassure except for accuracy.
 ```{r}
 cross_single_all <- full_join(cross_single_norand, cross_single)
@@ -474,11 +493,6 @@ rm(cross_single_norand, cross_single)
 ```
 
 
-best predictor
-```{r}
-
-```
-
 
 all single models plot
 ```{r}
@@ -489,13 +503,32 @@ mean_single_melt <- mean_single %>%
   melt(id = "model") %>%
   rename(metric = variable) %>%
   mutate(random_intercepts = case_when(str_detect(model, "study") &
-                                         !str_detect(model, "ID") ~ "study",
+                                         !str_detect(model, "ID") &
+                                         !str_detect(model, "Gender") ~ "study",
+                                       
+                                       str_detect(model, "study") &
+                                         !str_detect(model, "ID") &
+                                         str_detect(model, "Gender") ~ "study (+ Gender as fix)",
                                        
                                        str_detect(model, "ID") &
-                                         !str_detect(model, "study") ~ "ID",
+                                         !str_detect(model, "study") &
+                                         !str_detect(model, "Gender") ~ "ID",
                                        
                                        str_detect(model, "ID") &
-                                         str_detect(model, "study") ~ "study & ID",
+                                         !str_detect(model, "study") &
+                                         str_detect(model, "Gender") ~ "ID (+ Gender as fix)",
+                                       
+                                       str_detect(model, "ID") &
+                                         str_detect(model, "study") &
+                                         !str_detect(model, "Gender") ~ "study & ID",
+                                       
+                                       str_detect(model, "ID") &
+                                         str_detect(model, "study") &
+                                         str_detect(model, "Gender") ~ "study & ID (+ Gender as fix)",
+                                       
+                                       !str_detect(model, "ID") &
+                                         !str_detect(model, "study") &
+                                         str_detect(model, "Gender") ~ "no RE (+ Gender as fix)",
                                        
                                        TRUE ~ "no random effects"))
 
@@ -512,6 +545,8 @@ mean_single_error %>%
   ggplot(aes(metric, value, color = random_intercepts)) +
   geom_jitter(width = 0.2) +
   theme_bw() +
+  theme(panel.grid.major.x = element_blank()) +
+  scale_y_continuous(breaks = seq(0, 0.8, 0.1)) +
   labs(title = "Performance of single predictor models", subtitle = "grouped by random intercept used")
   #geom_pointrange(aes(ymin = value - error, ymax = value + error), position = "jitter")
 ```
@@ -528,14 +563,36 @@ mean_single_error_pred <- mean_single_error %>%
                                str_detect(model, "mean_abs") ~ "mean_abs",
                                str_detect(model, "coef_var") ~ "coef_var"))
 
-
+# PLOT SEN + SPE
 mean_single_error_pred %>%
-  filter(random_intercepts == "study" | random_intercepts == "no random effects") %>%
+  filter(random_intercepts == "study" | 
+           random_intercepts == "study (+ Gender as fix)" |
+           random_intercepts == "no random effects") %>%
   filter(metric == "SEN" | metric == "SPE") %>%
   ggplot(aes(x = fct_reorder(predictor, value, .fun = max), y = value)) +
   geom_segment(aes(xend=predictor), yend=0, size = 1) +
   geom_point(shape=18, aes(color = random_intercepts), size = 3) +
   facet_wrap(~metric) +
+  theme_bw() +
+  labs(title = "Single predictor model performances", 
+       subtitle = "comparison of sensitivity and specificity across predictors",
+       color = "random effects?",
+       x = "diagnosis ~ X") +
+  theme(legend.position ="bottom",
+        panel.grid.major.x = element_blank())
+```
+
+Plot SEN + SPE
+```{r}
+mean_single_error_pred %>%
+  filter(random_intercepts == "study" | 
+           random_intercepts == "study (+ Gender as fix)" |
+           random_intercepts == "no random effects") %>%
+  #filter(metric == "SEN" | metric == "SPE") %>%
+  ggplot(aes(x = fct_reorder(predictor, value, .fun = max), y = value)) +
+  geom_segment(stat = "summary", aes(xend=predictor), yend=0, size = 1) +
+  geom_point(stat = "summary", shape=18, aes(color = random_intercepts), size = 3) +
+  #facet_wrap(~metric) +
   theme_bw() +
   labs(title = "Single predictor model performances", 
        subtitle = "comparison of sensitivity and specificity across predictors",
@@ -672,6 +729,8 @@ nice function
 ```{r}
 confusion_plot <- function(model_name, random = TRUE) {
   
+  set.seed(1337)
+  
   # TRAINING
   if (isTRUE(random)){
 
@@ -723,7 +782,7 @@ confusion_plot <- function(model_name, random = TRUE) {
 using confusion_plot
 ```{r}
 # most sensitive model
-pl_SEN <- confusion_plot("diagnosis ~ coef_var + (1|study)")
+pl_SEN <- confusion_plot("diagnosis ~ iqr", random = FALSE)
 pl_SEN
 
 # most specific model
@@ -735,18 +794,18 @@ pl_PPV <- confusion_plot("diagnosis ~ mean + sd + range + mean_abs + se + Gender
 pl_PPV
 
 # highest NPV
-pl_NPV <- confusion_plot("diagnosis ~ mean + median + mean_abs + coef_var + (1|study)")
+pl_NPV <- confusion_plot("diagnosis ~ iqr", random = FALSE)
 pl_NPV
 
 # highest accuracy
-pl_ACC <- confusion_plot("diagnosis ~ median + se + (1|study)")
+pl_ACC <- confusion_plot("diagnosis ~ mean_abs + coef_var + se + Gender", random = FALSE)
 pl_ACC
 
 
 ### SUMMARIZED
 
 # highest avg pos SAME AS SEN
-pl_pos <- confusion_plot("diagnosis ~ coef_var + (1|study)")
+pl_pos <- confusion_plot("diagnosis ~ iqr", random = FALSE)
 pl_pos
 
 # highest avg neg
@@ -754,7 +813,7 @@ pl_neg <- confusion_plot("diagnosis ~ range + iqr + median + se + (1|study)")
 pl_neg
 
 # highest mean(all metrics) SAME AS PPV
-pl_all <- confusion_plot("diagnosis ~ mean + sd + range + mean_abs + se + Gender + (1|study)")
+pl_all <- confusion_plot("diagnosis ~ mean_abs + coef_var + se + Gender", random = FALSE)
 pl_all 
 
 
