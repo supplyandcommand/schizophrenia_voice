@@ -19,16 +19,21 @@ knitr::opts_chunk$set(echo = TRUE)
 library(pacman)
 p_load(tidyverse, 
        knitr, #kable()
+       gridExtra,
+       Hmisc,
+       egg,
        lmerTest, #lmer()
        caret, #sensitivity() etc.
        MASS, #stepAIC()
        pROC, #ci()
        boot, #inv.logit()
        groupdata2, #fold()
+       DescTools, #brier
        reshape2,
        ggrepel, # plotting text
        buildmer, #black-box
        MuMIn)  #dredge()
+
 
 select <- dplyr::select
 
@@ -194,9 +199,10 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, ran
   performances_NPV <- c()
   performances_AUC <- c()
   performances_ACC <- c()
-
+  performances_BRIER <- c()
   
-    # One iteration per fold
+  
+  # One iteration per fold
   for (fold in 1:k){   #from 1 to k
     
     # Create training set for this iteration
@@ -208,33 +214,34 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, ran
     testing_set <- data[data$.folds == fold,]
     
     ## Train model
-
+    
     # If there is a random effect,
     # use lmer() to train model
     # else use lm()
     
-     if (isTRUE(random)){
-
+    if (isTRUE(random)){
+      
       model <- glmer(model_name, training_set, family = "binomial")
-
+      
     } else {
       
       model <- glm(model_name, training_set, family = "binomial")
-
+      
     }
-
     
-
-
+    
+    
+    
     ## Test model
-
+    
     # Predict the dependent variable in the testing_set with the trained model
     predicted <- inv.logit(predict(model, testing_set, allow.new.levels=TRUE))
     
+    predicted_01 <- predicted
     # Make predicted into factors
-    predicted[predicted < 0.5] = 0
-    predicted[predicted >= 0.5] = 1
-    predicted_f <- factor(predicted)
+    predicted_01[predicted_01 < 0.5] = 0
+    predicted_01[predicted_01 >= 0.5] = 1
+    predicted_f <- factor(predicted_01)
     
     # Get model performance metrics between the predicted and the observed
     SEN <- caret::sensitivity(predicted_f, testing_set[[dependent]], positive = pos)
@@ -245,13 +252,16 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, ran
     
     NPV <- negPredValue(predicted_f, testing_set[[dependent]], negative = neg)
     
-    rocCurve <- roc(response = testing_set$diagnosis, predictor = predicted)
+    rocCurve <- roc(response = testing_set[[dependent]], predictor = predicted_01)
     AUC <- pROC::auc(rocCurve)
     
     testing_set$predicted <- predicted_f
     testing_correct <- filter(testing_set, diagnosis == as.character(predicted_f))
     testing_set <- testing_set
     ACC <- nrow(testing_correct) / nrow(testing_set)
+    
+    BRIER <- BrierScore(resp = as.numeric(as.character(testing_set[[dependent]])), 
+                        pred = predicted)
     
     # Add the to the performance list
     performances_SEN[fold] <- SEN
@@ -260,27 +270,31 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, ran
     performances_NPV[fold] <- NPV
     performances_AUC[fold] <- AUC
     performances_ACC[fold] <- ACC
-
+    performances_BRIER[fold] <- BRIER
+    
   }
   
   se <- function(x, na.rm = T) sqrt(var(x)/length(x))
-
+  
   # Return the mean of the recorded RMSEs
   return(cbind.data.frame('model' = model_name,
-           'SEN' = mean(performances_SEN, na.rm = T),
-           'SPE' = mean(performances_SPE, na.rm = T),
-           'PPV' = mean(performances_PPV, na.rm = T),
-           'NPV' = mean(performances_NPV, na.rm = T),
-           'AUC' = mean(performances_AUC, na.rm = T),
-           'ACC' = mean(performances_ACC, na.rm = T),
-           'SEN_SE' = se(performances_SEN, na.rm = T),
-           'SPE_SE' = se(performances_SPE, na.rm = T),
-           'PPV_SE' = se(performances_PPV, na.rm = T),
-           'NPV_SE' = se(performances_NPV, na.rm = T),
-           'AUC_SE' = se(performances_AUC, na.rm = T),
-           'ACC_SE' = se(performances_ACC, na.rm = T)))
-
+                          'SEN' = mean(performances_SEN, na.rm = T),
+                          'SPE' = mean(performances_SPE, na.rm = T),
+                          'PPV' = mean(performances_PPV, na.rm = T),
+                          'NPV' = mean(performances_NPV, na.rm = T),
+                          'AUC' = mean(performances_AUC, na.rm = T),
+                          'ACC' = mean(performances_ACC, na.rm = T),
+                          'BRIER' = mean(performances_BRIER, na.rm = T),
+                          'SEN_SE' = se(performances_SEN, na.rm = T),
+                          'SPE_SE' = se(performances_SPE, na.rm = T),
+                          'PPV_SE' = se(performances_PPV, na.rm = T),
+                          'NPV_SE' = se(performances_NPV, na.rm = T),
+                          'AUC_SE' = se(performances_AUC, na.rm = T),
+                          'ACC_SE' = se(performances_ACC, na.rm = T),
+                          'BRIER_SE' = se(performances_BRIER, na.rm = T)))
+  
 }
+
 ```
 
 
@@ -330,7 +344,55 @@ kable(range_models[,1:7])
 Range plots 
 (depends on later code)
 ```{r}
-confusion_plot("diagnosis ~ iqr", random = FALSE)
+q1_m1 <- confusion_plot("diagnosis ~ range", random = FALSE)
+q1_m2 <- confusion_plot("diagnosis ~ range + (1|study)")
+q1_m3 <- confusion_plot("diagnosis ~ range + (1|ID) + (1|study)")
+```
+
+```{r}
+grid_arrange_shared_legend <-
+  function(...,
+           ncol = length(list(...)),
+           nrow = 1,
+           position = c("bottom", "right")) {
+    
+    plots <- list(...)
+    position <- match.arg(position)
+    g <-
+      ggplotGrob(plots[[1]] + theme(legend.position = position))$grobs
+    legend <- g[[which(sapply(g, function(x)
+      x$name) == "guide-box")]]
+    lheight <- sum(legend$height)
+    lwidth <- sum(legend$width)
+    gl <- lapply(plots, function(x)
+      x + theme(legend.position = "none"))
+    gl <- c(gl, ncol = ncol, nrow = nrow)
+    
+    combined <- switch(
+      position,
+      "bottom" = arrangeGrob(
+        do.call(arrangeGrob, gl),
+        legend,
+        ncol = 1,
+        heights = unit.c(unit(1, "npc") - lheight, lheight)
+      ),
+      "right" = arrangeGrob(
+        do.call(arrangeGrob, gl),
+        legend,
+        ncol = 2,
+        widths = unit.c(unit(1, "npc") - lwidth, lwidth)
+      )
+    )
+    
+    grid.newpage()
+    grid.draw(combined)
+    
+    # return gtable invisibly
+    invisible(combined)
+    
+  }
+
+grid_arrange_shared_legend(q1_m1, q1_m2, q1_m3)
 ```
 
 
@@ -777,13 +839,21 @@ mean_par_melt <- mean_par %>%
              model == "diagnosis ~ iqr" ~ "m1",
              model == "diagnosis ~ mean + range + iqr + (1|study)" ~ "m2",
              model == "diagnosis ~ mean + sd + range + mean_abs + se + Gender + (1|study)" ~ "m3",
-             model == "diagnosis ~ mean_abs + coef_var + se + Gender" ~ "m4"))
+             model == "diagnosis ~ mean_abs + coef_var + se + Gender" ~ "m4")) %>%
+  mutate(model_type_m = 
+           case_when(
+             model == "diagnosis ~ iqr" ~ paste0(model_type, ": ", model),
+             model == "diagnosis ~ mean + range + iqr + (1|study)" ~ paste0(model_type, ": ", model),
+             model == "diagnosis ~ mean + sd + range + mean_abs + se + Gender + (1|study)" 
+             ~ paste0(model_type, ": ", model),
+             model == "diagnosis ~ mean_abs + coef_var + se + Gender" ~ paste0(model_type, ": ", model)))
 
 mean_par_error <- mean_par %>%
   select(contains("_SE"), model) %>%
   melt(id = "model") %>%
   rename(metric = variable, error = value) %>%
   mutate(metric = str_remove_all(metric, "_SE")) %>%
+  #mutate(model_type_m = ))
   full_join(mean_par_melt)
 ```
 
@@ -795,9 +865,9 @@ mean_par_error %>%
   filter(!is.na(model_type)) %>%
   ggplot(aes(x = fct_reorder(model_type, value, .fun = max), y = value)) +
   geom_segment(aes(xend=model_type), yend=0, size = 1) +
-  geom_point(shape=18, aes(color = fct_reorder(model, value, .fun = max)), size = 3) +
+  geom_point(shape=18, aes(color = fct_reorder(model_type_m, value, .fun = max)), size = 3) +
   facet_wrap(~metric) +
-  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1)) +
+  scale_y_continuous(breaks = seq(0.3, 0.9, 0.1), limit = c(0.3, 0.9)) +
   theme_bw() +
   labs(title = "Performance of best multiple-predictor models", 
        subtitle = expression(paste("Comparison of ", 
@@ -807,7 +877,7 @@ mean_par_error %>%
                                    " across predictors")),
        color = "model formula",
        x = "top models") +
-  theme(legend.direction = "horizontal", legend.position = "bottom", legend.box = "vertical",
+  theme(legend.direction = "vertical", legend.position = "bottom", legend.box = "vertical",
         panel.grid.major.x = element_blank())
 
 # PLOT PPV + NPV
@@ -816,9 +886,9 @@ mean_par_error %>%
   filter(!is.na(model_type)) %>%
   ggplot(aes(x = fct_reorder(model_type, value, .fun = max), y = value)) +
   geom_segment(aes(xend=model_type), yend=0, size = 1) +
-  geom_point(shape=18, aes(color = fct_reorder(model, value, .fun = max)), size = 3) +
+  geom_point(shape=18, aes(color = fct_reorder(model_type_m, value, .fun = max)), size = 3) +
   facet_wrap(~metric) +
-  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1)) +
+  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1), limit = c(0.3, 0.8)) +
   theme_bw() +
   labs(title = "Performance of best multiple-predictor models", 
        subtitle = expression(paste("Comparison of ", 
@@ -828,7 +898,7 @@ mean_par_error %>%
                                    " across predictors")),
        color = "model formula",
        x = "top models") +
-  theme(legend.direction = "horizontal", legend.position = "bottom", legend.box = "vertical",
+  theme(legend.direction = "vertical", legend.position = "bottom", legend.box = "vertical",
         panel.grid.major.x = element_blank())
 ```
 

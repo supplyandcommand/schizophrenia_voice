@@ -29,6 +29,7 @@ p_load(tidyverse,
        boot, #inv.logit()
        groupdata2, #fold()
        devtools,
+       DescTools,
        MuMIn)  #dredge()
 
 install_github('cvoeten/buildmer')
@@ -46,6 +47,9 @@ Bear_scaled <- read_csv("Bear_scaled_fold.csv") %>%
 # LIMITED CRAZINESS 
 ## CV function
 ```{r}
+# heavily inspired by Ludvig Renbo Olsen
+# https://cran.r-project.org/web/packages/groupdata2/vignettes/cross-validation_with_groupdata2.html
+
 crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, random = TRUE) {
   # Initialize empty list for recording performances
   performances_SEN <- c()
@@ -54,9 +58,10 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, ran
   performances_NPV <- c()
   performances_AUC <- c()
   performances_ACC <- c()
-
+  performances_BRIER <- c()
   
-    # One iteration per fold
+  
+  # One iteration per fold
   for (fold in 1:k){   #from 1 to k
     
     # Create training set for this iteration
@@ -68,33 +73,34 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, ran
     testing_set <- data[data$.folds == fold,]
     
     ## Train model
-
+    
     # If there is a random effect,
     # use lmer() to train model
     # else use lm()
     
-     if (isTRUE(random)){
-
+    if (isTRUE(random)){
+      
       model <- glmer(model_name, training_set, family = "binomial")
-
+      
     } else {
       
       model <- glm(model_name, training_set, family = "binomial")
-
+      
     }
-
     
-
-
+    
+    
+    
     ## Test model
-
+    
     # Predict the dependent variable in the testing_set with the trained model
     predicted <- inv.logit(predict(model, testing_set, allow.new.levels=TRUE))
     
+    predicted_01 <- predicted
     # Make predicted into factors
-    predicted[predicted < 0.5] = 0
-    predicted[predicted >= 0.5] = 1
-    predicted_f <- factor(predicted)
+    predicted_01[predicted_01 < 0.5] = 0
+    predicted_01[predicted_01 >= 0.5] = 1
+    predicted_f <- factor(predicted_01)
     
     # Get model performance metrics between the predicted and the observed
     SEN <- caret::sensitivity(predicted_f, testing_set[[dependent]], positive = pos)
@@ -105,13 +111,16 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, ran
     
     NPV <- negPredValue(predicted_f, testing_set[[dependent]], negative = neg)
     
-    rocCurve <- roc(response = testing_set$diagnosis, predictor = predicted)
+    rocCurve <- roc(response = testing_set[[dependent]], predictor = predicted_01)
     AUC <- pROC::auc(rocCurve)
     
     testing_set$predicted <- predicted_f
     testing_correct <- filter(testing_set, diagnosis == as.character(predicted_f))
     testing_set <- testing_set
     ACC <- nrow(testing_correct) / nrow(testing_set)
+    
+    BRIER <- BrierScore(resp = as.numeric(as.character(testing_set[[dependent]])), 
+                        pred = predicted)
     
     # Add the to the performance list
     performances_SEN[fold] <- SEN
@@ -120,27 +129,31 @@ crossvalidation_nation <- function(data, k, model_name, dependent, pos, neg, ran
     performances_NPV[fold] <- NPV
     performances_AUC[fold] <- AUC
     performances_ACC[fold] <- ACC
-
+    performances_BRIER[fold] <- BRIER
+    
   }
   
   se <- function(x, na.rm = T) sqrt(var(x)/length(x))
-
+  
   # Return the mean of the recorded RMSEs
   return(cbind.data.frame('model' = model_name,
-           'SEN' = mean(performances_SEN, na.rm = T),
-           'SPE' = mean(performances_SPE, na.rm = T),
-           'PPV' = mean(performances_PPV, na.rm = T),
-           'NPV' = mean(performances_NPV, na.rm = T),
-           'AUC' = mean(performances_AUC, na.rm = T),
-           'ACC' = mean(performances_ACC, na.rm = T),
-           'SEN_SE' = se(performances_SEN, na.rm = T),
-           'SPE_SE' = se(performances_SPE, na.rm = T),
-           'PPV_SE' = se(performances_PPV, na.rm = T),
-           'NPV_SE' = se(performances_NPV, na.rm = T),
-           'AUC_SE' = se(performances_AUC, na.rm = T),
-           'ACC_SE' = se(performances_ACC, na.rm = T)))
-
+                          'SEN' = mean(performances_SEN, na.rm = T),
+                          'SPE' = mean(performances_SPE, na.rm = T),
+                          'PPV' = mean(performances_PPV, na.rm = T),
+                          'NPV' = mean(performances_NPV, na.rm = T),
+                          'AUC' = mean(performances_AUC, na.rm = T),
+                          'ACC' = mean(performances_ACC, na.rm = T),
+                          'BRIER' = mean(performances_BRIER, na.rm = T),
+                          'SEN_SE' = se(performances_SEN, na.rm = T),
+                          'SPE_SE' = se(performances_SPE, na.rm = T),
+                          'PPV_SE' = se(performances_PPV, na.rm = T),
+                          'NPV_SE' = se(performances_NPV, na.rm = T),
+                          'AUC_SE' = se(performances_AUC, na.rm = T),
+                          'ACC_SE' = se(performances_ACC, na.rm = T),
+                          'BRIER_SE' = se(performances_BRIER, na.rm = T)))
+  
 }
+
 ```
 
 
