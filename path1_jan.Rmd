@@ -683,6 +683,26 @@ mean_single_error_pred %>%
         axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
+BRIER 
+```{r}
+mean_single_error_pred %>%
+  filter(random_intercepts == "study" | 
+           random_intercepts == "study (+ Gender as fix)" |
+           random_intercepts == "no random effects") %>%
+  filter(metric == "BRIER") %>%
+  ggplot(aes(x = fct_reorder(predictor, value, .fun = max), y = value)) +
+  geom_segment(aes(xend=predictor), yend=0, size = 1) +
+  geom_point(shape=18, aes(color = random_intercepts), size = 3) +
+  theme_bw() +
+  labs(title = "Single predictor model performances", 
+       subtitle = "Comparison of Brier scores (the lower the better)",
+       color = "random effects?",
+       x = "diagnosis ~ X") +
+  theme(legend.position ="bottom",
+        panel.grid.major.x = element_blank(),
+        axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
 
 SOME SHITTY PLOT
 ```{r}
@@ -836,17 +856,16 @@ mean_par_melt <- mean_par %>%
   rename(metric = variable) %>%
   mutate(model_type = 
            case_when(
-             model == "diagnosis ~ iqr" ~ "m1",
-             model == "diagnosis ~ mean + range + iqr + (1|study)" ~ "m2",
-             model == "diagnosis ~ mean + sd + range + mean_abs + se + Gender + (1|study)" ~ "m3",
-             model == "diagnosis ~ mean_abs + coef_var + se + Gender" ~ "m4")) %>%
+             model == "diagnosis ~ coef_var + se + Gender" ~ "m1",
+             model == "diagnosis ~ coef_var + se + (1|study)" ~ "m2",
+             model == "diagnosis ~ coef_var + se" ~ "m3",
+             model == "diagnosis ~ iqr + coef_var + se + Gender" ~ "m4")) %>%
   mutate(model_type_m = 
            case_when(
-             model == "diagnosis ~ iqr" ~ paste0(model_type, ": ", model),
-             model == "diagnosis ~ mean + range + iqr + (1|study)" ~ paste0(model_type, ": ", model),
-             model == "diagnosis ~ mean + sd + range + mean_abs + se + Gender + (1|study)" 
-             ~ paste0(model_type, ": ", model),
-             model == "diagnosis ~ mean_abs + coef_var + se + Gender" ~ paste0(model_type, ": ", model)))
+             model == "diagnosis ~ coef_var + se + Gender" ~ paste0(model_type, ": ", model),
+             model == "diagnosis ~ coef_var + se + (1|study)" ~ paste0(model_type, ": ", model),
+             model == "diagnosis ~ coef_var + se" ~ paste0(model_type, ": ", model),
+             model == "diagnosis ~ iqr + coef_var + se + Gender" ~ paste0(model_type, ": ", model)))
 
 mean_par_error <- mean_par %>%
   select(contains("_SE"), model) %>%
@@ -1007,6 +1026,11 @@ pl_mer <- confusion_plot("diagnosis ~ se + mean + iqr + mean_abs + coef_var + Ge
 pl_mer
 ```
 
+## TOP BRIAR VALUES PLOT
+```{r}
+pl_bri1 <- confusion_plot("diagnosis ~ coef_var + se + Gender", random = FALSE)
+pl_bri1
+```
 
 
 
