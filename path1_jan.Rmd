@@ -327,6 +327,12 @@ range_models <- mean_par %>%
 kable(range_models[,1:7])
 ```
 
+Range plots 
+(depends on later code)
+```{r}
+confusion_plot("diagnosis ~ iqr", random = FALSE)
+```
+
 
 <OFFTOPIC>
 ## ID vs uniqueness debate
@@ -557,7 +563,8 @@ cool plot comparing sensitivity and specificity of models across predictors
 mean_single_error_pred <- mean_single_error %>%
   mutate(predictor = case_when(str_detect(model, "range") ~ "range",
                                str_detect(model, "sd") ~ "sd",
-                               str_detect(model, "mean") ~ "mean",
+                               str_detect(model, "mean") &
+                                 !str_detect(model, "_abs") ~ "mean",
                                str_detect(model, "median") ~ "median",
                                str_detect(model, "iqr") ~ "iqr",
                                str_detect(model, "mean_abs") ~ "mean_abs",
@@ -573,14 +580,19 @@ mean_single_error_pred %>%
   geom_segment(aes(xend=predictor), yend=0, size = 1) +
   geom_point(shape=18, aes(color = random_intercepts), size = 3) +
   facet_wrap(~metric) +
-  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1)) +
+  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1), limit = c(0.3, 0.8)) +
   theme_bw() +
   labs(title = "Single predictor model performances", 
-       subtitle = "comparison of sensitivity and specificity across predictors",
+       subtitle = expression(paste("Comparison of ", 
+                                   italic("sensitivity"), 
+                                   " and ",
+                                   italic("specificity"),
+                                   " across predictors")),
        color = "random effects?",
        x = "diagnosis ~ X") +
   theme(legend.position ="bottom",
-        panel.grid.major.x = element_blank())
+        panel.grid.major.x = element_blank(),
+        axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
 cool plot PPV, NPV
@@ -594,14 +606,19 @@ mean_single_error_pred %>%
   geom_segment(aes(xend=predictor), yend=0, size = 1) +
   geom_point(shape=18, aes(color = random_intercepts), size = 3) +
   facet_wrap(~metric) +
-  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1)) +
+  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1), limit = c(0.3, 0.8)) +
   theme_bw() +
   labs(title = "Single predictor model performances", 
-       subtitle = "comparison of PPV and NPV across predictors",
+       subtitle = expression(paste("Comparison of ", 
+                                   italic("PPV"), 
+                                   " and ",
+                                   italic("NPV"),
+                                   " across predictors")),
        color = "random effects?",
-       x = "diagnosis ~ X") +
+       x = "top model") +
   theme(legend.position ="bottom",
-        panel.grid.major.x = element_blank())
+        panel.grid.major.x = element_blank(),
+        axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
 
@@ -755,35 +772,12 @@ mean_par_melt <- mean_par %>%
   select(-contains("error")) %>%
   melt(id = "model") %>%
   rename(metric = variable) %>%
-  mutate(random_intercepts = case_when(str_detect(model, "study") &
-                                         !str_detect(model, "ID") &
-                                         !str_detect(model, "Gender") ~ "study",
-                                       
-                                       str_detect(model, "study") &
-                                         !str_detect(model, "ID") &
-                                         str_detect(model, "Gender") ~ "study (+ Gender as fix)",
-                                       
-                                       str_detect(model, "ID") &
-                                         !str_detect(model, "study") &
-                                         !str_detect(model, "Gender") ~ "ID",
-                                       
-                                       str_detect(model, "ID") &
-                                         !str_detect(model, "study") &
-                                         str_detect(model, "Gender") ~ "ID (+ Gender as fix)",
-                                       
-                                       str_detect(model, "ID") &
-                                         str_detect(model, "study") &
-                                         !str_detect(model, "Gender") ~ "study & ID",
-                                       
-                                       str_detect(model, "ID") &
-                                         str_detect(model, "study") &
-                                         str_detect(model, "Gender") ~ "study & ID (+ Gender as fix)",
-                                       
-                                       !str_detect(model, "ID") &
-                                         !str_detect(model, "study") &
-                                         str_detect(model, "Gender") ~ "no RE (+ Gender as fix)",
-                                       
-                                       TRUE ~ "no random effects"))
+  mutate(model_type = 
+           case_when(
+             model == "diagnosis ~ iqr" ~ "m1",
+             model == "diagnosis ~ mean + range + iqr + (1|study)" ~ "m2",
+             model == "diagnosis ~ mean + sd + range + mean_abs + se + Gender + (1|study)" ~ "m3",
+             model == "diagnosis ~ mean_abs + coef_var + se + Gender" ~ "m4"))
 
 mean_par_error <- mean_par %>%
   select(contains("_SE"), model) %>%
@@ -795,32 +789,46 @@ mean_par_error <- mean_par %>%
 
 #### PLOTTING
 ```{r}
-mean_par_error_pred <- mean_par_error %>%
-  mutate(predictor = case_when(str_detect(model, "range") ~ "range",
-                               str_detect(model, "sd") ~ "sd",
-                               str_detect(model, "mean") ~ "mean",
-                               str_detect(model, "median") ~ "median",
-                               str_detect(model, "iqr") ~ "iqr",
-                               str_detect(model, "mean_abs") ~ "mean_abs",
-                               str_detect(model, "coef_var") ~ "coef_var"))
-
 # PLOT SEN + SPE
-mean_single_error_pred %>%
-  filter(random_intercepts == "study" | 
-           random_intercepts == "study (+ Gender as fix)" |
-           random_intercepts == "no random effects") %>%
+mean_par_error %>%
   filter(metric == "SEN" | metric == "SPE") %>%
-  ggplot(aes(x = fct_reorder(predictor, value, .fun = max), y = value)) +
-  geom_segment(aes(xend=predictor), yend=0, size = 1) +
-  geom_point(shape=18, aes(color = random_intercepts), size = 3) +
+  filter(!is.na(model_type)) %>%
+  ggplot(aes(x = fct_reorder(model_type, value, .fun = max), y = value)) +
+  geom_segment(aes(xend=model_type), yend=0, size = 1) +
+  geom_point(shape=18, aes(color = fct_reorder(model, value, .fun = max)), size = 3) +
   facet_wrap(~metric) +
   scale_y_continuous(breaks = seq(0.3, 0.8, 0.1)) +
   theme_bw() +
-  labs(title = "Single predictor model performances", 
-       subtitle = "comparison of sensitivity and specificity across predictors",
-       color = "random effects?",
-       x = "diagnosis ~ X") +
-  theme(legend.position ="bottom",
+  labs(title = "Performance of best multiple-predictor models", 
+       subtitle = expression(paste("Comparison of ", 
+                                   italic("sensitivity"), 
+                                   " and ",
+                                   italic("specificity"),
+                                   " across predictors")),
+       color = "model formula",
+       x = "top models") +
+  theme(legend.direction = "horizontal", legend.position = "bottom", legend.box = "vertical",
+        panel.grid.major.x = element_blank())
+
+# PLOT PPV + NPV
+mean_par_error %>%
+  filter(metric == "PPV" | metric == "NPV") %>%
+  filter(!is.na(model_type)) %>%
+  ggplot(aes(x = fct_reorder(model_type, value, .fun = max), y = value)) +
+  geom_segment(aes(xend=model_type), yend=0, size = 1) +
+  geom_point(shape=18, aes(color = fct_reorder(model, value, .fun = max)), size = 3) +
+  facet_wrap(~metric) +
+  scale_y_continuous(breaks = seq(0.3, 0.8, 0.1)) +
+  theme_bw() +
+  labs(title = "Performance of best multiple-predictor models", 
+       subtitle = expression(paste("Comparison of ", 
+                                   italic("PPV"), 
+                                   " and ",
+                                   italic("NPV"),
+                                   " across predictors")),
+       color = "model formula",
+       x = "top models") +
+  theme(legend.direction = "horizontal", legend.position = "bottom", legend.box = "vertical",
         panel.grid.major.x = element_blank())
 ```
 
@@ -833,22 +841,26 @@ confusion_plot <- function(model_name, random = TRUE) {
   
   set.seed(1337)
   
+  training_set <- Bear_scaled[Bear_scaled$.folds != 5,]
+  testing_set <- Bear_scaled[Bear_scaled$.folds == 5,]
+  
+  
   # TRAINING
   if (isTRUE(random)){
 
-      model <- glmer(model_name, Bear_scaled, family = "binomial")
+      model <- glmer(model_name, training_set, family = "binomial")
 
     } else {
       
-      model <- glm(model_name, Bear_scaled, family = "binomial")
+      model <- glm(model_name, training_set, family = "binomial")
 
     }
 
   
   # OUTPUT
-  mod_df <- Bear_scaled %>%
+  mod_df <- testing_set %>%
     ungroup() %>%
-    mutate(pred_best_num = inv.logit(predict(model, Bear_scaled, 
+    mutate(pred_best_num = inv.logit(predict(model, testing_set, 
                                              allow.new.levels=TRUE)),
            pred_best = ifelse(pred_best_num < 0.5, 0, 1),
            pred_tab = case_when(pred_best == 0 & diagnosis == 0 ~ "true negative",
@@ -872,7 +884,8 @@ confusion_plot <- function(model_name, random = TRUE) {
          subtitle = model_name,
          fill = "truth value", 
          y = "number of model predictions", 
-         x = "model prediction")
+         x = "model prediction", 
+         caption = "trainted on folds 1 to 4, tested on fold 5")
   
   return(plot)
 }
